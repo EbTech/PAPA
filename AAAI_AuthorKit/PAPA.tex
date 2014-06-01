@@ -16,6 +16,7 @@
 \newtheorem{defn}{Definition}
 \newtheorem{lemma}{Lemma}
 \newtheorem{thm}{Theorem}
+\newtheorem{cor}{Corollary}
 % END Additional packages
 \frenchspacing
 \setlength{\pdfpagewidth}{8.5in}
@@ -53,11 +54,11 @@ Hello world.
 \begin{algorithmic}
 \STATE $g_{front} := \infty$
 \STATE $s' :=$ first node in $OPEN \cup BE$
-\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
+\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l + 2\delta$
 \WHILE{$g_{back} < g(s) \le g_{front}$}
-\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
+\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s) + 2\delta)$
 \STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
-\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
+\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l + 2\delta$
 \ENDWHILE
 \RETURN $\min(g_{front},\;g_{back})$
 \end{algorithmic}
@@ -100,10 +101,10 @@ Hello world.
 \end{algorithmic}
 \end{algorithm}
 
-Throughout this paper, we assume all edge costs are bounded below by $c_l$, that $\epsilon \ge 1$ and $0 \le w \le \epsilon$.
+Throughout this paper, we assume all edge costs are bounded below by $c_l$, that $\epsilon \ge 1$, $\delta \ge 0$ and $0 \le w \le \epsilon$. For most applications, we recommend using $\delta = 0$ and $w = \epsilon$. However, as we will see, it may pay to use $w < \epsilon$ when there are a lot of processors available, or $\delta > 0$ when the mean edge cost of paths is known to be much higher than the lower bound $c_l$.
 
-\begin{defn}[TODO: don't need these definitions]
-We say a state $s$ is independent of $s'$ if $g(s) \le g_p(s') + \epsilon h(s',s)$. We say $s\in OPEN$ is safe to expand if $s$ is independent of all $s'\in OPEN \cup BE$.
+\begin{defn}[TODO: these definitions are never used, so we don't need them]
+We say a state $s$ is independent of $s'$ if $g(s) \le g_p(s') + \epsilon h(s',s) + 2\delta$. We say $s\in OPEN$ is safe to expand if $s$ is independent of all $s'\in OPEN \cup BE$.
 \end{defn}
 
 \begin{lemma}
@@ -125,52 +126,32 @@ At all times, for all states $s,s'$:
 
 \begin{lemma}
 \label{lem:subopt}
-For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, upon expanding $s$, $g(s) \le \epsilon g^*(s)$.
+For all states $s$, $bound(s) \le \epsilon g^*(s) + k(s)\delta$ where $k(s)$ is the least number of edges used in a minimum-cost path to $s$. Hence, upon expanding $s$, $g(s) \le \epsilon g^*(s) + k(s)\delta$.
 \end{lemma}
 
 \begin{proof}
-We proceed inductively by the order in which states are expanded. By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
-\[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
+We proceed inductively by the order in which states are expanded. By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s) + 2\delta$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l + 2\delta$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
+\[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) + 2\delta.\]
 
-We complete the proof by showing that the latter expression is bounded above by $\epsilon g^*(s)$. Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
+We complete the proof by showing that the latter expression is bounded above by $\epsilon g^*(s) + k(s)\delta$. Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p) + k(s_p)\delta$. Therefore,
 \begin{eqnarray*}
 \epsilon g^*(s)&=& \epsilon\left(g^*(s_p) + c(s_p,s') + c^*(s',s)\right)
-\\&\ge& g(s_p) + \epsilon c(s_p,s') + \epsilon h(s',s)
-\\&\ge& g_p(s') + \epsilon h(s',s)
+\\&\ge& g(s_p) -  k(s_p)\delta + \epsilon c(s_p,s') + \epsilon h(s',s)
+\\&\ge& g_p(s') - k(s_p)\delta + \epsilon h(s',s)
+\\&\ge& g_p(s') + \epsilon h(s',s) + 2\delta - k(s)\delta
 \end{eqnarray*}
 \end{proof}
 
-TODO: clear up initial case where $s = s' = s_{start}$.
+TODO: clear up initial case where $s = s' = s_{start}$ and mention that use of $\delta$ was inspired by \cite{klein1997randomized}.
 
-\begin{algorithm}
-\caption{$meanbound(s)$ with $w \le 1$}
-\label{alg:bound}
-\begin{algorithmic}
-\STATE $s' :=$ first node in $OPEN \cup BE$
-\RETURN $g(s) + f(s') - f(s) + (1-w) c_l + 2(\epsilon-1) c_m$
-\end{algorithmic}
-\end{algorithm}
-
-When $c_l$ is very small but we have a good estimate for the mean edge cost, we can maximize parallelism by using $meanbound(s)$ in place of $bound(s)$. This variant of PAPA* is inspired by \cite{klein1997randomized}.
-
-\begin{lemma}
-\label{lem:mopt}
-For all states $s$, $bound(s) \le g^*(s) + (\epsilon-1) c_m k(s)$ where $k(s)$ is the least number of edges used in a minimum-cost path to $s$. In particular, if $c_m$ is not more than the mean cost of the edges along the minimum-cost path, then upon expansion, $g(s) \le \epsilon g^*(s)$.
-\end{lemma}
+\begin{cor}
+\label{cor:subopt}
+If $\delta$ is not more than $m$ times the mean cost of the edges along the minimum-cost path to $s$, then upon expansion, $g(s) \le (\epsilon + m)g^*(s)$.
+\end{cor}
 
 \begin{proof}
-We proceed inductively by the order in which states are expanded. Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis,
-
-\begin{eqnarray*}
-&&g^*(s) + (\epsilon-1) c_m k(s)
-\\&=& g^*(s_p) + c(s_p,s') + c^*(s',s) + (\epsilon-1) c_m k(s)
-\\&\ge& g(s_p) + c(s_p,s') + h(s',s) + (\epsilon-1) c_m (k(s) - k(s_p))
-\\&\ge& g(s') + h(s',s) + 2(\epsilon-1) c_m
-\\&\ge& g(s') + wh(s',s) + (1-w)c_l + 2(\epsilon-1) c_m
-\\&\ge& g(s') + w(h(s') - h(s)) + (1-w)c_l + 2(\epsilon-1) c_m
-\\&=& g(s) + f(s') - f(s) + (1-w)c_l + 2(\epsilon-1) c_m
-\\&=& bound(s)
-\end{eqnarray*}
+We assumed $\delta \le m g^*(s) / k(s)$.
+It follows from Lemma \ref{lem:subopt} that $g(s) \le \epsilon g^*(s) + k(s)\delta \le (\epsilon + m)g^*(s)$.
 \end{proof}
 
 \bibliographystyle{aaai}
