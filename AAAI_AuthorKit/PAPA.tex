@@ -1,0 +1,179 @@
+%File: formatting-instruction.tex
+\documentclass[letterpaper]{article}
+% AAAI format packages
+\usepackage{aaai}
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+% Additional packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{comment}
+\newtheorem{defn}{Definition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+% END Additional packages
+\frenchspacing
+\setlength{\pdfpagewidth}{8.5in}
+\setlength{\pdfpageheight}{11in}
+\pdfinfo{
+/Title (PAPA*: Path-Aware Parallel A*)
+/Author (Aram Ebtekar, Mike Phillips, Sven Koenig, Maxim Likhachev)
+/Keywords (weighted A* search, parallel algorithm, heuristic)
+}
+\setcounter{secnumdepth}{0}  
+ \begin{document}
+% The file aaai.sty is the style file for AAAI Press 
+% proceedings, working notes, and technical reports.
+%
+\title{PAPA*: Path-Aware Parallel A*}
+\author{Aram Ebtekar$^\dagger$ \and Mike Phillips$^\dagger$ \and Sven Koenig\thanks{University of Southern California, Los Angeles, CA 90089} \and Maxim Likhachev% <-this % stops a space
+\thanks{Carnegie Mellon University, Pittsburgh, PA 15217}% <-this % stops a space
+%
+}
+\author{AAAI 2015 Submission X}% anonymizer
+\maketitle
+\begin{abstract}
+\begin{quote}
+AAAI creates proceedings, working notes, and technical reports directly from electronic source furnished by the authors. To ensure that all papers in the publication have a uniform appearance, authors must adhere to the following instructions. 
+\end{quote}
+\end{abstract}
+
+\section{Fancy Stuff}
+
+Hello world.
+
+\begin{algorithm}
+\caption{$bound(s)$}
+\label{alg:bound}
+\begin{algorithmic}
+\STATE $g_{front} := \infty$
+\STATE $s' :=$ first node in $OPEN \cup BE$
+\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
+\WHILE{$g_{back} < g(s) \le g_{front}$}
+\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
+\STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
+\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
+\ENDWHILE
+\RETURN $\min(g_{front},\;g_{back})$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{PAPA*}
+\label{alg:PAPA*}
+\begin{algorithmic}
+\STATE LOCK
+\WHILE{$g(s_{goal}) > bound(s_{goal})$}
+\STATE remove an $s$ from $OPEN$ that has the smallest $f(s)$ among all states in $OPEN$ with $g(s) \le bound(s)$ and let $g_{bound} := bound(s)$
+\IF{such an $s$ does not exist}
+\STATE UNLOCK
+\STATE wait until $OPEN$ or $BE$ change
+\STATE LOCK
+\STATE continue
+\ENDIF
+\STATE insert $s$ into $BE$
+\STATE insert $s$ into $CLOSED$
+\STATE UNLOCK
+\STATE $S := getSucessors(s)$
+\STATE LOCK
+\FORALL{$s' \in S$}
+\IF{$s'$ has not been generated yet}
+\STATE $f(s') := g(s') := g_p(s') := \infty$
+\ENDIF
+\IF{$s' \notin CLOSED$}
+\STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
+\IF {$g(s') > g(s) + c(s,s')$}
+\STATE $g(s') = g(s) + c(s,s')$
+\STATE $f(s') = g(s') + wh(s')$
+\STATE $bp(s') = s$
+\STATE insert/update $s'$ in(to) $OPEN$ with key $f(s)$
+\ENDIF
+\ENDIF
+\ENDFOR
+\STATE remove $s$ from $BE$
+\ENDWHILE
+\end{algorithmic}
+\end{algorithm}
+
+Throughout this paper, we assume all edge costs are bounded below by $c_l$, that $\epsilon \ge 1$ and $0 \le w \le \epsilon$.
+
+\begin{defn}[TODO: don't need these definitions]
+We say a state $s$ is independent of $s'$ if $g(s) \le g_p(s') + \epsilon h(s',s)$. We say $s\in OPEN$ is safe to expand if $s$ is independent of all $s'\in OPEN \cup BE$.
+\end{defn}
+
+\begin{lemma}
+\label{lem:indep}
+At all times, for all states $s,s'$:
+\[g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l \le g_p(s') + \epsilon h(s',s).\]
+\end{lemma}
+
+\begin{proof}
+\begin{eqnarray*}
+&&g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l
+\\&=& g(s') + w(h(s') - h(s)) + (2\epsilon-w-1) c_l
+\\&\le& g(s') + wh(s',s) + (2\epsilon-w-1) c_l
+\\&\le& g(s') + \epsilon h(s',s) + (w-\epsilon) c_l + (2\epsilon-w-1) c_l
+\\&=& g(s') + \epsilon h(s',s) + (\epsilon-1) c_l
+\\&\le& g_p(s') + \epsilon h(s',s)
+\end{eqnarray*}
+\end{proof}
+
+\begin{lemma}
+\label{lem:subopt}
+For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, upon expanding $s$, $g(s) \le \epsilon g^*(s)$.
+\end{lemma}
+
+\begin{proof}
+We proceed inductively by the order in which states are expanded. By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
+\[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
+
+We complete the proof by showing that the latter expression is bounded above by $\epsilon g^*(s)$. Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
+\begin{eqnarray*}
+\epsilon g^*(s)&=& \epsilon\left(g^*(s_p) + c(s_p,s') + c^*(s',s)\right)
+\\&\ge& g(s_p) + \epsilon c(s_p,s') + \epsilon h(s',s)
+\\&\ge& g_p(s') + \epsilon h(s',s)
+\end{eqnarray*}
+\end{proof}
+
+TODO: clear up initial case where $s = s' = s_{start}$.
+
+\begin{algorithm}
+\caption{$meanbound(s)$ with $w \le 1$}
+\label{alg:bound}
+\begin{algorithmic}
+\STATE $s' :=$ first node in $OPEN \cup BE$
+\RETURN $g(s) + f(s') - f(s) + (1-w) c_l + 2(\epsilon-1) c_m$
+\end{algorithmic}
+\end{algorithm}
+
+When $c_l$ is very small but we have a good estimate for the mean edge cost, we can maximize parallelism by using $meanbound(s)$ in place of $bound(s)$. This variant of PAPA* is inspired by \cite{klein1997randomized}.
+
+\begin{lemma}
+\label{lem:mopt}
+For all states $s$, $bound(s) \le g^*(s) + (\epsilon-1) c_m k(s)$ where $k(s)$ is the least number of edges used in a minimum-cost path to $s$. In particular, if $c_m$ is not more than the mean cost of the edges along the minimum-cost path, then upon expansion, $g(s) \le \epsilon g^*(s)$.
+\end{lemma}
+
+\begin{proof}
+We proceed inductively by the order in which states are expanded. Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis,
+
+\begin{eqnarray*}
+&&g^*(s) + (\epsilon-1) c_m k(s)
+\\&=& g^*(s_p) + c(s_p,s') + c^*(s',s) + (\epsilon-1) c_m k(s)
+\\&\ge& g(s_p) + c(s_p,s') + h(s',s) + (\epsilon-1) c_m (k(s) - k(s_p))
+\\&\ge& g(s') + h(s',s) + 2(\epsilon-1) c_m
+\\&\ge& g(s') + wh(s',s) + (1-w)c_l + 2(\epsilon-1) c_m
+\\&\ge& g(s') + w(h(s') - h(s)) + (1-w)c_l + 2(\epsilon-1) c_m
+\\&=& g(s) + f(s') - f(s) + (1-w)c_l + 2(\epsilon-1) c_m
+\\&=& bound(s)
+\end{eqnarray*}
+\end{proof}
+
+\bibliographystyle{aaai}
+\bibliography{PAPA}
+
+\end{document}
