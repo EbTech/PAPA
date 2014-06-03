@@ -40,27 +40,44 @@
 \maketitle
 \begin{abstract}
 \begin{quote}
-AAAI creates proceedings, working notes, and technical reports directly from electronic source furnished by the authors. To ensure that all papers in the publication have a uniform appearance, authors must adhere to the following instructions. 
+PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE, which are in turn based on A*.
 \end{quote}
 \end{abstract}
 
 \section{Fancy Stuff}
 
-Hello world.
+Keys are always computed by $f(s) = g(s) + wh(s)$, and we assume all edge costs are bounded below by $c_l$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees.
 
 \begin{algorithm}
-\caption{$bound(s)$}
+\caption{bound($s$)}
 \label{alg:bound}
 \begin{algorithmic}
 \STATE $g_{front} := \infty$
 \STATE $s' :=$ first node in $OPEN \cup BE$
-\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l + 2\delta$
+\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
 \WHILE{$g_{back} < g(s) \le g_{front}$}
-\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s) + 2\delta)$
+\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s)$
 \STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
-\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l + 2\delta$
+\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
 \ENDWHILE
 \RETURN $\min(g_{front},\;g_{back})$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{main()}
+\label{alg:main}
+\begin{algorithmic}
+\STATE $g_p(s_{start}) := g(s_{start}) := 0$
+\STATE $g_p(s_{goal}) := g(s_{goal}) := \infty$
+\STATE $OPEN := BE := CLOSED := \emptyset$
+\STATE $FROZEN := \{s_{start}\}$
+\REPEAT
+\STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\epsilon]$
+\STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
+\STATE $CLOSED := FROZEN := \emptyset$
+\STATE run PAPA* on multiple threads in parallel
+\UNTIL{path is good enough or planning time runs out}
 \end{algorithmic}
 \end{algorithm}
 
@@ -84,15 +101,16 @@ Hello world.
 \STATE LOCK
 \FORALL{$s' \in S$}
 \IF{$s'$ has not been generated yet}
-\STATE $f(s') := g(s') := g_p(s') := \infty$
+\STATE $g_p(s') := g(s') := \infty$
 \ENDIF
-\IF{$s' \notin CLOSED$}
 \STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
 \STATE $g(s') = g(s) + c(s,s')$
-\STATE $f(s') = g(s') + wh(s')$
 \STATE $bp(s') = s$
-\STATE insert/update $s'$ in(to) $OPEN$ with key $f(s)$
+\IF{$s' \in CLOSED$}
+\STATE insert $s'$ in $FROZEN$
+\ELSE
+\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
 \ENDIF
 \ENDIF
 \ENDFOR
@@ -100,12 +118,6 @@ Hello world.
 \ENDWHILE
 \end{algorithmic}
 \end{algorithm}
-
-Throughout this paper, we assume all edge costs are bounded below by $c_l$, that $\epsilon \ge 1$, $\delta \ge 0$ and $0 \le w \le \epsilon$. For most applications, we recommend using $\delta = 0$ and $w = \epsilon$. However, as we will see, it may pay to use $w < \epsilon$ when there are a lot of processors available, or $\delta > 0$ when the mean edge cost of paths is known to be much higher than the lower bound $c_l$.
-
-\begin{defn}[TODO: these definitions are never used, so we don't need them]
-We say a state $s$ is independent of $s'$ if $g(s) \le g_p(s') + \epsilon h(s',s) + 2\delta$. We say $s\in OPEN$ is safe to expand if $s$ is independent of all $s'\in OPEN \cup BE$.
-\end{defn}
 
 \begin{lemma}
 \label{lem:indep}
@@ -125,34 +137,75 @@ At all times, for all states $s,s'$:
 \end{proof}
 
 \begin{lemma}
-\label{lem:subopt}
-For all states $s$, $bound(s) \le \epsilon g^*(s) + k(s)\delta$ where $k(s)$ is the least number of edges used in a minimum-cost path to $s$. Hence, upon expanding $s$, $g(s) \le \epsilon g^*(s) + k(s)\delta$.
+\label{lem:bound}
+$bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
 \end{lemma}
 
 \begin{proof}
-We proceed inductively by the order in which states are expanded. By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s) + 2\delta$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l + 2\delta$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
-\[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) + 2\delta.\]
+By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
+\[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
 
-We complete the proof by showing that the latter expression is bounded above by $\epsilon g^*(s) + k(s)\delta$. Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p) + k(s_p)\delta$. Therefore,
-\begin{eqnarray*}
-\epsilon g^*(s)&=& \epsilon\left(g^*(s_p) + c(s_p,s') + c^*(s',s)\right)
-\\&\ge& g(s_p) -  k(s_p)\delta + \epsilon c(s_p,s') + \epsilon h(s',s)
-\\&\ge& g_p(s') - k(s_p)\delta + \epsilon h(s',s)
-\\&\ge& g_p(s') + \epsilon h(s',s) + 2\delta - k(s)\delta
-\end{eqnarray*}
+For the second part, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
 \end{proof}
 
-TODO: clear up initial case where $s = s' = s_{start}$ and mention that use of $\delta$ was inspired by \cite{klein1997randomized}.
-
-\begin{cor}
-\label{cor:subopt}
-If $\delta$ is not more than $m$ times the mean cost of the edges along the minimum-cost path to $s$, then upon expansion, $g(s) \le (\epsilon + m)g^*(s)$.
-\end{cor}
+\begin{thm}
+\label{thm:subopt}
+For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, upon expanding $s$, $g(s) \le \epsilon g^*(s)$.
+\end{thm}
 
 \begin{proof}
-We assumed $\delta \le m g^*(s) / k(s)$.
-It follows from Lemma \ref{lem:subopt} that $g(s) \le \epsilon g^*(s) + k(s)\delta \le (\epsilon + m)g^*(s)$.
+Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
+\begin{eqnarray*}
+\epsilon g^*(s)&=& \epsilon\left(g^*(s_p) + c(s_p,s') + c^*(s',s)\right)
+\\&\ge& g(s_p) + \epsilon c(s_p,s') + \epsilon h(s',s)
+\\&\ge& g_p(s') + \epsilon h(s',s)
+\end{eqnarray*}
+
+Therefore by Lemma \ref{lem:bound},
+\[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
+
+TODO: clear up initial case where $s = s' = s_{start}$.
+
+\begin{thm}
+\label{thm:depth}
+If $w \le 1$, the parallel depth of checkless PAPA* is bounded above by
+\[\min\left(\frac{\epsilon g^*(s_{goal})}{(1-w)c_l},\;
+\frac{\left(\epsilon g^*(s_{goal})\right)^2 }{(4\epsilon-2w-2)c_l^2}\right).\]
+\end{thm}
+
+\begin{proof}
+We prove the two bounds separately. For the first, note that if the lowest $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can simultaneously be expanded. Since $h$ is consistent, the successors' $f$-values is at least $f_{min} + (1-w)c_l$. Therefore, the depth is at most
+\[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\]
+
+For the other bound, notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + (2\epsilon-w-1)c_l) / c_l = f_{min}/c_l + 2\epsilon-w-1$ iterations, after which every node in $OPEN$ has $f$-value $>= f_{min} + (2\epsilon-w-1)c_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iterations is:
+
+$2\epsilon-w-1 + 2(2\epsilon-w-1) + 3(2\epsilon-w-1) + ... + \epsilon g^*(s_{goal})/c_l
+\approxeq \epsilon g^*(s_{goal})/c_l )^2 / ( 4\epsilon-2 ).$
+iterations of parallel expansion is enough to find the optimal path.
+\end{proof}
+
+\section{Mods}
+
+Let $k(s)$ be the least number of edges used in a minimum-cost path to $s$ and fix $\delta > 0$. If $g_{front}$ and $g_{back}$ are each increased by $2\delta$, then by similar arguments to the proofs earlier in the paper, we find that, upon expanding $s$, $g(s) \le \epsilon g^*(s) + \delta k(s)$.
+
+Here's an extension inspired by \cite{klein1997randomized}: suppose the mean edge cost $c_m$ along the optimal path is known to be much greater than the lower bound $c_l$. In such a case, the bound in Theorem \ref{thm:depth} scales poorly. To remedy the situation, we ``grow" the small edges, effectively running PAPA* with $c_l' = c_l + \delta$ and $c'(s,s') = \max(c(s,s'), c_l')$.
+
+\begin{thm}
+\label{thm:delta}
+If the mean cost of the edges along the minimum-cost path to $s$ is at least $c_m$, then upon expansion, $g(s) \le \epsilon(1+\delta/c_m)g^*(s)$. Therefore, to get the same optimality factor as $\epsilon$, we can set $\delta = (\epsilon-1)c_m$.
+\end{thm}
+
+\begin{proof}
+We assumed $c_m \le g^*(s) / k(s)$, so $k(s) \le g^*(s) / c_m$.
+It follows from Lemma \ref{thm:subopt} that $g'(s) \le \epsilon g'^*(s) \le \epsilon(g^*(s) + \delta k(s)) \le \epsilon(1+\delta/c_m)g^*(s)$.
+\end{proof}
+
+\begin{cor}
+\label{cor:delta}
+If $w \le 1$, the parallel depth of checkless PAPA* can be improved to
+\[\frac{\epsilon g^*(s_{goal})}{(1-w)(c_l+(\epsilon-1)c_m)}.\]
+\end{cor}
 
 \bibliographystyle{aaai}
 \bibliography{PAPA}
