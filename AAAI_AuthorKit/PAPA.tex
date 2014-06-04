@@ -66,7 +66,6 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \caption{PAPA*}
 \label{alg:PAPA*}
 \begin{algorithmic}
-\STATE LOCK
 \WHILE{$g(s_{goal}) > bound(s_{goal})$}
 \STATE remove an $s$ from $OPEN$ that has the smallest $f(s)$ among all states in $OPEN$ with $g(s) \le bound(s)$ and let $g_{bound} := bound(s)$
 \IF{such an $s$ does not exist}
@@ -102,24 +101,27 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \caption{main()}
 \label{alg:main}
 \begin{algorithmic}
-\STATE $g_p(s_{start}) := g(s_{start}) := 0$
+\STATE $g(s_{start}) := 0$
 \STATE $g_p(s_{goal}) := g(s_{goal}) := \infty$
-\STATE $OPEN := BE := CLOSED := \emptyset$
+\STATE $OPEN := BE := \emptyset$
 \STATE $FROZEN := \{s_{start}\}$
 \REPEAT
 \STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\epsilon]$
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
+\FORALL{$s\in OPEN$}
+\STATE $g_p(s) := \epsilon g(s)$
+\ENDFOR
 \STATE run PAPA* on multiple threads in parallel
 \UNTIL{path is good enough or planning time runs out}
 \end{algorithmic}
 \end{algorithm}
 
-Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively.
+Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $\epsilon$ decreases between iterations of the main() loop.
 
 \begin{lemma}
 \label{lem:indep}
-At all times, for all states $s,s'$:
+At all times, for all states $s,s' \ne s_{start}$:
 \[g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l \le g_p(s') + \epsilon h(s',s).\]
 \end{lemma}
 
@@ -129,7 +131,7 @@ At all times, for all states $s,s'$:
 \\&=& g(s') + w(h(s',s_{goal}) - h(s,s_{goal})) + (2\epsilon-w-1) c_l
 \\&\le& g(s') + wh(s',s) + (2\epsilon-w-1) c_l
 \\&\le& g(s') + \epsilon h(s',s) + (w-\epsilon) c_l + (2\epsilon-w-1) c_l
-\\&=& g(s') + \epsilon h(s',s) + (\epsilon-1) c_l
+\\&=& g(s') + (\epsilon-1) c_l + \epsilon h(s',s)
 \\&\le& g_p(s') + \epsilon h(s',s)
 \end{eqnarray*}
 \end{proof}
@@ -146,25 +148,35 @@ By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for
 For the second part, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
 \end{proof}
 
+\begin{lemma}
+\label{lem:opt}
+For every optimal path from $s_{start}$ to some $s\in OPEN$, every state $s'$ up to and including the first one in $OPEN \cup BE \cup FROZEN$ has $g(s') = g^*(s').$
+\end{lemma}
+
+\begin{proof}
+We proceed by induction on time: noting the lemma holds right after $s_{start}$ is added to the open list, we show that it can never become false. Suppose for contradiction that it becomes false at some point. Since $g(s')$ never changes after achieving $g^*(s')$, it must be the case that the first state $s'$ along some optimal path to lie in $OPEN \cup BE \cup FROZEN$ has stopped being in this set. This can only happen by expanding $s'$ before its successor along the path. But then, the successor is added to $OPEN$ and its $g$-value is made optimal by the expansion of $s'$. Therefore, the invariant is maintained.
+\end{proof}
+
 \begin{thm}
 \label{thm:subopt}
-For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, upon expanding $s$, $g(s) \le \epsilon g^*(s)$.
+For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le \epsilon g^*(s)$.
 \end{thm}
 
 \begin{proof}
-We proceed by induction on the order in which states are expanded. The invariant is that the $g$-value at every $CLOSED$ node is $\epsilon$-suboptimal and, for every optimal path from $s_{start}$ to some $s\in OPEN$, every node up to and including the first one in $OPEN \cup BE \cup FROZEN$ is exactly optimal (and hence $\epsilon$-optimal even as $\epsilon$ changes).
+We proceed by induction on the order in which states are expanded.
 
-Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
-\begin{eqnarray*}
-\epsilon g^*(s)&=& \epsilon\left(g^*(s_p) + c(s_p,s') + c^*(s',s)\right)
-\\&\ge& g(s_p) + \epsilon c(s_p,s') + \epsilon h(s',s)
-\\&\ge& g_p(s') + \epsilon h(s',s)
-\end{eqnarray*}
-Therefore by Lemma \ref{lem:bound},
+Fix an optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Now, there are two cases to consider.
+
+If $s'$ is one of the nodes which were originally transferred from $FROZEN$ to $OPEN$ in the current iteration of the main() loop, then $g(s') = g^*(s')$. Therefore,
+\[g_p(s') \le \epsilon g(s') = \epsilon g^*(s').\]
+
+Otherwise, let $s_p$ be the predecessor of $s'$ on the optimal path. Then $s_p \in CLOSED$ so, by the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
+\[g_p(s') \le g(s_p) + \epsilon c(s_p,s') \le \epsilon(g^*(s_p) + c(s_p,s')) = \epsilon g^*(s').\]
+In either case,
+\[g_p(s') + \epsilon h(s',s) \le \epsilon\left(g^*(s') + c^*(s',s)\right) = \epsilon g^*(s).\]
+Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
-
-TODO: clear up initial case where $s = s' = s_{start}$, and fix hole in proof where $s'$ is $\epsilon$-optimal only for a previous $\epsilon$.
 
 \begin{thm}
 \label{thm:depth}
@@ -177,14 +189,14 @@ If $w \le 1$, the parallel depth of checkless PAPA* is bounded above by
 We prove the two bounds separately. For the first, note that if the lowest $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can simultaneously be expanded. Since $h$ is consistent, the successors' $f$-values is at least $f_{min} + (1-w)c_l$. Therefore, the depth is at most
 \[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\]
 
-For the other bound, notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + (2\epsilon-w-1)c_l) / c_l = f_{min}/c_l + 2\epsilon-w-1$ iterations, after which every node in $OPEN$ has $f$-value $>= f_{min} + (2\epsilon-w-1)c_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iterations is:
+For the other bound, notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + (2\epsilon-w-1)c_l) / c_l = f_{min}/c_l + 2\epsilon-w-1$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + (2\epsilon-w-1)c_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iterations is:
 
 $2\epsilon-w-1 + 2(2\epsilon-w-1) + 3(2\epsilon-w-1) + ... + \epsilon g^*(s_{goal})/c_l
 \approxeq \epsilon g^*(s_{goal})/c_l )^2 / ( 4\epsilon-2 ).$
 iterations of parallel expansion is enough to find the optimal path.
 \end{proof}
 
-\section{Mods}
+\section{Edgewise Supobtimality}
 
 Let $k(s)$ be the least number of edges used in a minimum-cost path to $s$ and fix $\delta > 0$. If $g_{front}$ and $g_{back}$ are each increased by $2\delta$, then by similar arguments to the proofs earlier in the paper, we find that, upon expanding $s$, $g(s) \le \epsilon g^*(s) + \delta k(s)$.
 
