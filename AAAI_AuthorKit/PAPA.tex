@@ -46,8 +46,6 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 
 \section{Fancy Stuff}
 
-Keys are always computed by $f(s) = g(s) + wh(s)$, and we assume all edge costs are bounded below by $c_l$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees.
-
 \begin{algorithm}
 \caption{bound($s$)}
 \label{alg:bound}
@@ -56,11 +54,47 @@ Keys are always computed by $f(s) = g(s) + wh(s)$, and we assume all edge costs 
 \STATE $s' :=$ first node in $OPEN \cup BE$
 \STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
 \WHILE{$g_{back} < g(s) \le g_{front}$}
-\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s)$
+\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
 \STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
 \STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$
 \ENDWHILE
 \RETURN $\min(g_{front},\;g_{back})$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{PAPA*}
+\label{alg:PAPA*}
+\begin{algorithmic}
+\STATE LOCK
+\WHILE{$g(s_{goal}) > bound(s_{goal})$}
+\STATE remove an $s$ from $OPEN$ that has the smallest $f(s)$ among all states in $OPEN$ with $g(s) \le bound(s)$ and let $g_{bound} := bound(s)$
+\IF{such an $s$ does not exist}
+\STATE wait until $OPEN$ or $BE$ change
+\STATE continue
+\ENDIF
+\STATE insert $s$ into $BE$
+\STATE insert $s$ into $CLOSED$
+\STATE $S := getSuccessors(s)$
+\FORALL{$s' \in S$}
+\STATE LOCK $s'$
+\IF{$s'$ has not been generated yet}
+\STATE $g_p(s') := g(s') := \infty$
+\ENDIF
+\STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
+\IF {$g(s') > g(s) + c(s,s')$}
+\STATE $g(s') = g(s) + c(s,s')$
+\STATE $bp(s') = s$
+\IF{$s' \in CLOSED$}
+\STATE insert $s'$ in $FROZEN$
+\ELSE
+\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
+\ENDIF
+\ENDIF
+\STATE UNLOCK $s'$
+\ENDFOR
+\STATE remove $s$ from $BE$
+\ENDWHILE
 \end{algorithmic}
 \end{algorithm}
 
@@ -81,43 +115,7 @@ Keys are always computed by $f(s) = g(s) + wh(s)$, and we assume all edge costs 
 \end{algorithmic}
 \end{algorithm}
 
-\begin{algorithm}
-\caption{PAPA*}
-\label{alg:PAPA*}
-\begin{algorithmic}
-\STATE LOCK
-\WHILE{$g(s_{goal}) > bound(s_{goal})$}
-\STATE remove an $s$ from $OPEN$ that has the smallest $f(s)$ among all states in $OPEN$ with $g(s) \le bound(s)$ and let $g_{bound} := bound(s)$
-\IF{such an $s$ does not exist}
-\STATE UNLOCK
-\STATE wait until $OPEN$ or $BE$ change
-\STATE LOCK
-\STATE continue
-\ENDIF
-\STATE insert $s$ into $BE$
-\STATE insert $s$ into $CLOSED$
-\STATE UNLOCK
-\STATE $S := getSucessors(s)$
-\STATE LOCK
-\FORALL{$s' \in S$}
-\IF{$s'$ has not been generated yet}
-\STATE $g_p(s') := g(s') := \infty$
-\ENDIF
-\STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
-\IF {$g(s') > g(s) + c(s,s')$}
-\STATE $g(s') = g(s) + c(s,s')$
-\STATE $bp(s') = s$
-\IF{$s' \in CLOSED$}
-\STATE insert $s'$ in $FROZEN$
-\ELSE
-\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
-\ENDIF
-\ENDIF
-\ENDFOR
-\STATE remove $s$ from $BE$
-\ENDWHILE
-\end{algorithmic}
-\end{algorithm}
+Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively.
 
 \begin{lemma}
 \label{lem:indep}
@@ -128,7 +126,7 @@ At all times, for all states $s,s'$:
 \begin{proof}
 \begin{eqnarray*}
 &&g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l
-\\&=& g(s') + w(h(s') - h(s)) + (2\epsilon-w-1) c_l
+\\&=& g(s') + w(h(s',s_{goal}) - h(s,s_{goal})) + (2\epsilon-w-1) c_l
 \\&\le& g(s') + wh(s',s) + (2\epsilon-w-1) c_l
 \\&\le& g(s') + \epsilon h(s',s) + (w-\epsilon) c_l + (2\epsilon-w-1) c_l
 \\&=& g(s') + \epsilon h(s',s) + (\epsilon-1) c_l
@@ -154,18 +152,19 @@ For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, upon expanding $s$, $
 \end{thm}
 
 \begin{proof}
+We proceed by induction on the order in which states are expanded. The invariant is that the $g$-value at every $CLOSED$ node is $\epsilon$-suboptimal and, for every optimal path from $s_{start}$ to some $s\in OPEN$, every node up to and including the first one in $OPEN \cup BE \cup FROZEN$ is exactly optimal (and hence $\epsilon$-optimal even as $\epsilon$ changes).
+
 Fix any optimal path to $s$, and let $s'$ be the first node on it which is in $OPEN \cup BE$. Let $s_p$ be the predecessor of $s'$ on this path. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
 \begin{eqnarray*}
 \epsilon g^*(s)&=& \epsilon\left(g^*(s_p) + c(s_p,s') + c^*(s',s)\right)
 \\&\ge& g(s_p) + \epsilon c(s_p,s') + \epsilon h(s',s)
 \\&\ge& g_p(s') + \epsilon h(s',s)
 \end{eqnarray*}
-
 Therefore by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
 
-TODO: clear up initial case where $s = s' = s_{start}$.
+TODO: clear up initial case where $s = s' = s_{start}$, and fix hole in proof where $s'$ is $\epsilon$-optimal only for a previous $\epsilon$.
 
 \begin{thm}
 \label{thm:depth}
