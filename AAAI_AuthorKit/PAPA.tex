@@ -78,7 +78,7 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \FORALL{$s' \in S$}
 \STATE LOCK $s'$
 \IF{$s'$ has not been generated yet}
-\STATE $g_p(s') := g(s') := \infty$
+\STATE $g(s') := g_p(s') := \infty$
 \ENDIF
 \STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
@@ -102,7 +102,7 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \label{alg:main}
 \begin{algorithmic}
 \STATE $g(s_{start}) := 0$
-\STATE $g_p(s_{goal}) := g(s_{goal}) := \infty$
+\STATE $g(s_{goal}) := g_p(s_{goal}) := \infty$
 \STATE $OPEN := BE := \emptyset$
 \STATE $FROZEN := \{s_{start}\}$
 \REPEAT
@@ -178,6 +178,15 @@ Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
 
+\begin{cor}
+\label{cor:subopt}
+At the end of a main() loop iteration, the path obtained by following the back-pointers $bp(\cdot)$ from $s_{goal}$ to $s_{start}$ is $\epsilon$-suboptimal.
+\end{cor}
+
+\begin{proof}
+The termination condition of PAPA* implies $g(s_{goal}) \le bound(s_{goal})$. By construction, the path given by following back-pointers costs at most $g(s_{goal})$. The claim thus follows from Theorem \ref{thm:subopt}.
+\end{proof}
+
 \begin{thm}
 \label{thm:depth}
 If $w \le 1$, the parallel depth of checkless PAPA* is bounded above by
@@ -189,11 +198,10 @@ If $w \le 1$, the parallel depth of checkless PAPA* is bounded above by
 We prove the two bounds separately. For the first, note that if the lowest $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can simultaneously be expanded. Since $h$ is consistent, the successors' $f$-values is at least $f_{min} + (1-w)c_l$. Therefore, the depth is at most
 \[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\]
 
-For the other bound, notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + (2\epsilon-w-1)c_l) / c_l = f_{min}/c_l + 2\epsilon-w-1$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + (2\epsilon-w-1)c_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iterations is:
+For the other bound, notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + (2\epsilon-w-1)c_l) / c_l = f_{min}/c_l + 2\epsilon-w-1$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + (2\epsilon-w-1)c_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iteration count is:
 
 $2\epsilon-w-1 + 2(2\epsilon-w-1) + 3(2\epsilon-w-1) + ... + \epsilon g^*(s_{goal})/c_l
-\approxeq \epsilon g^*(s_{goal})/c_l )^2 / ( 4\epsilon-2 ).$
-iterations of parallel expansion is enough to find the optimal path.
+\approxeq (\epsilon g^*(s_{goal})/c_l )^2 / ( 4\epsilon-2w-2 ).$
 \end{proof}
 
 \section{Edgewise Supobtimality}
