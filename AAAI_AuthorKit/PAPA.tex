@@ -74,14 +74,9 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \ENDIF
 \STATE insert $s$ into $BE$
 \STATE insert $s$ into $CLOSED$
+\STATE $v(s) := g(s)$
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
-\IF{$s'$ has not been generated yet}
-\STATE $g(s') := g_p(s') := \infty$
-\ELSIF{$\epsilon$ decreased since $g_p(s')$ was last seen}
-\STATE $g_p(s') := \max(g_p(s') - (\epsilon_{old}-\epsilon)c(bp(s'),s'),$
-\STATE \qquad\qquad\qquad$g(s') + (\epsilon-1)c(bp_p(s'),s'))$
-\ENDIF
 \STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
 \STATE $g(s') = g(s) + c(s,s')$
@@ -103,8 +98,10 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \caption{main()}
 \label{alg:main}
 \begin{algorithmic}
+\FORALL{states $s$}
+\STATE $g(s) := v(s) := \infty$
+\ENDFOR
 \STATE $g(s_{start}) := 0$
-\STATE $g(s_{goal}) := g_p(s_{goal}) := \infty$
 \STATE $OPEN := BE := \emptyset$
 \STATE $FROZEN := \{s_{start}\}$
 \REPEAT
@@ -114,12 +111,15 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \FORALL{$s\in OPEN$}
 \STATE $g_p(s) := \epsilon g(s)$
 \ENDFOR
+\FORALL{$s\notin OPEN$}
+\STATE $g_p(s) := g(s) + 2c_l$
+\ENDFOR
 \STATE run PAPA* on multiple threads in parallel
 \UNTIL{path is good enough or planning time runs out}
 \end{algorithmic}
 \end{algorithm}
 
-Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $\epsilon$ decreases between iterations of the main() loop.
+Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $\epsilon$ decreases between iterations of the main() loop. $v(s)$ is included to aid the analysis but is never used in the algorithm. In main(), the loops involving all $s\notin OPEN$ are computed lazily when those states are first encountered.
 
 \begin{lemma}
 \label{lem:indep}
@@ -167,13 +167,16 @@ For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Fix a minimum-cost path $\pi$ from $s_{start}$ to $s$ such that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$. Let $s'$ be the first node on it which is in $OPEN \cup BE$. There are two cases to consider, depending on whether $\pi$ has a $CLOSED$ state before $s'$.
+Fix a minimum-cost path $\pi$ from $s_{start}$ to $s$ such that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$. Let $s'$ be the first node on it which is in $OPEN \cup BE$. There are three cases to consider, depending on where on $\pi$ has a $CLOSED$ state before $s'$.
 
-If so, then every state between it and $s'$ is also in $CLOSED$, since $s'$ is the first state on $\pi$ to be in $OPEN \cup BE$. In particular, let $s_p\in CLOSED$ be the predecessor of $s'$ on $\pi$. By the induction hypothesis, $g(s_p) \le \epsilon g^*(s_p)$. Therefore,
+If there is no $CLOSED$ state on the way to $s'$, then since $FROZEN \subset CLOSED$, it follows that $s'$ is the first state on $\pi$ to lie in $OPEN\cup BE\cup FROZEN$. By Lemma \ref{lem:opt}, $g(s') = g^*(s')$. Furthermore, $g_p(s') \le \epsilon g(s')$. Therefore,
+\[g_p(s') \le \epsilon g(s') = \epsilon g^*(s').\]
+
+If the immediate predecessor $s_p$ of $s'$ is in $CLOSED$, then $g(s_p) \le \epsilon g^*(s_p)$ by the induction hypothesis. Therefore,
 \[g_p(s') \le g(s_p) + \epsilon c(s_p,s') \le \epsilon(g^*(s_p) + c(s_p,s')) = \epsilon g^*(s').\]
 
-In the other case, $\pi$ has no $CLOSED$ state before $s'$. Since $FROZEN \subset CLOSED$, it follows that $s'$ is the first state on $\pi$ to lie in $OPEN\cup BE\cup FROZEN$. By Lemma \ref{lem:opt}, $g(s') = g^*(s')$. Furthermore, $g_p(s') \le \epsilon g(s')$. Therefore,
-\[g_p(s') \le \epsilon g(s') = \epsilon g^*(s').\]
+Finally, if a non-immediate predecessor $s_p$ of $s'$ is in $CLOSED$, then $g(s_p) \le \epsilon g^*(s_p)$ by the induction hypothesis. Therefore,
+\[g_p(s') \le g(s_p) + 2c_l \le \epsilon(g^*(s_p) + c^*(s_p,s')) = \epsilon g^*(s').\]
 
 In either case,
 \[g_p(s') + \epsilon h(s',s) \le \epsilon\left(g^*(s') + c^*(s',s)\right) = \epsilon g^*(s).\]
