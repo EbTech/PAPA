@@ -67,17 +67,19 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \label{alg:PAPA*}
 \begin{algorithmic}
 \WHILE{$g(s_{goal}) > bound(s_{goal})$}
-\STATE remove an $s$ from $OPEN$ that has the smallest $f(s)$ among all states in $OPEN$ with $g(s) \le bound(s)$ and let $g_{bound} := bound(s)$
+\STATE among $s\in OPEN$ such that $g(s) \le bound(s)$, choose one with the smallest $f(s)$ and LOCK $s$
 \IF{such an $s$ does not exist}
 \STATE wait until $OPEN$ or $BE$ change
 \STATE continue
 \ENDIF
+\STATE $g_{bound} := bound(s)$
 \STATE insert $s$ into $BE$
 \STATE insert $s$ into $CLOSED$
+\STATE UNLOCK $s$
 \STATE $v(s) := g(s)$
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
-\STATE $g_p(s') = \min(g_p(s),\; g_{bound} + \epsilon c(s,s'))$
+\STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
 \STATE $g(s') = g(s) + c(s,s')$
 \STATE $bp(s') = s$
@@ -112,7 +114,7 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \STATE $g_p(s) := \epsilon g(s)$
 \ENDFOR
 \FORALL{$s\notin OPEN$}
-\STATE $g_p(s) := g(s) + 2c_l$
+\STATE $g_p(s) := g(s) + 2(\epsilon-1)c_l$
 \ENDFOR
 \STATE run PAPA* on multiple threads in parallel
 \UNTIL{path is good enough or planning time runs out}
@@ -120,6 +122,25 @@ PAPA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \end{algorithm}
 
 Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $\epsilon$ decreases between iterations of the main() loop. $v(s)$ is included to aid the analysis but is never used in the algorithm. In main(), the loops involving all $s\notin OPEN$ are computed lazily when those states are first encountered.
+
+\begin{lemma}
+\label{lem:prop}
+At all times, the following properties hold:
+\begin{itemize}
+\item $bp(s) = argmin_{s'}\{v(s') + c(s',s)\}$
+\item $g(s) = v(bp(s)) + c(bp(s),s)$
+\item $s\in OPEN\cup BE\cup FROZEN \Rightarrow g(s) < v(s)$
+\item $s\notin OPEN\cup BE\cup FROZEN \Rightarrow g(s) = v(s)$
+\item $s\neq s_{start} \Rightarrow g_p(s) \ge g(s) + (\epsilon-1)c_l$
+\item $BE\subset CLOSED$ and $FROZEN\subset CLOSED$
+\item $OPEN\cap CLOSED = \emptyset$
+\item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
+\end{itemize}
+\end{lemma}
+
+\begin{proof}
+Simple induction.
+\end{proof}
 
 \begin{lemma}
 \label{lem:indep}
@@ -150,36 +171,31 @@ By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for
 For the second part, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
 \end{proof}
 
-\begin{lemma}
-\label{lem:opt}
-Fix a state $s$ with $g^*(s)<\infty$ and let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path with $s_0 = s_{start}$ and $s_N = s$. Fix the minimum $i$ such that $s_i \in OPEN \cup BE \cup FROZEN$, or $i=N$ if there is no such $s_i$. Then $g(s_j) = g^*(s_j)$ for all $j\le i$. Furthermore, if $\pi$ was chosen in such a way that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$, then $g(s_j) > g^*(s_j)$ for all $j > i$.
-\end{lemma}
-
-\begin{proof}
-We proceed by induction on time: noting the lemma holds at initialization, we show that it can never become false. Suppose for contradiction that it becomes false at some point. Since $g(s')$ never changes after achieving $g^*(s')$, it must be the case that the first state $s'$ along some optimal path to lie in $OPEN \cup BE \cup FROZEN$ has stopped being in this set. This can only happen by expanding $s'$ before its successor along the path. But then, the successor is added to $OPEN$ and its $g$-value is made optimal by the expansion of $s'$. (TODO: what if g was already optimal so it's not added to OPEN?) Therefore, the invariant is maintained.
-\end{proof}
-
 \begin{thm}
 \label{thm:subopt}
-For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le \epsilon g^*(s)$.
+For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
 \end{thm}
 
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Fix a minimum-cost path $\pi$ from $s_{start}$ to $s$ such that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$. Let $s'$ be the first node on it which is in $OPEN \cup BE$. There are three cases to consider, depending on where on $\pi$ has a $CLOSED$ state before $s'$.
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s$, such that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$. Let $s_i$ be the first node in $\pi \cap(OPEN \cup BE)$. There are three cases to consider. First, suppose $s_{i-1}\in CLOSED$. Then
+\[g_p(s_i) \le \epsilon(g^*(s_{i-1}) + c(s_{i-1},s_i)) = \epsilon g^*(s_i)\]
 
-If there is no $CLOSED$ state on the way to $s'$, then since $FROZEN \subset CLOSED$, it follows that $s'$ is the first state on $\pi$ to lie in $OPEN\cup BE\cup FROZEN$. By Lemma \ref{lem:opt}, $g(s') = g^*(s')$. Furthermore, $g_p(s') \le \epsilon g(s')$. Therefore,
-\[g_p(s') \le \epsilon g(s') = \epsilon g^*(s').\]
+Now suppose $s_j\in CLOSED$ for some $j<i-1$, and that $s_k \notin OPEN\cup BE\cup CLOSED$ for all $j<k<i$. Then $v(s_j) \le \epsilon g^*(s_j)$ by the induction hypothesis. Since the in-between states are consistent, $g(s_i) \le v(s_j) + c^*(s_j,s_i) \le \epsilon g^*(s_j) + c^*(s_j,s_i)$. Therefore,
+\begin{eqnarray*}
+g_p(s_i) &\le& g(s_{i}) + 2(\epsilon-1)c_l
+\\&\le& \epsilon g^*(s_j) + c^*(s_j,s_i) + 2(\epsilon-1)c_l
+\\&=& \epsilon(g^*(s_i) - c^*(c_j,s_i)) + c^*(s_j,s_i) + 2(\epsilon-1)c_l
+\\&=& \epsilon g^*(s_i) + (\epsilon-1)(2c_l - c^*(s_j,s_i))
+\\&\le& \epsilon g^*(s_i)
+\end{eqnarray*}
 
-If the immediate predecessor $s_p$ of $s'$ is in $CLOSED$, then $g(s_p) \le \epsilon g^*(s_p)$ by the induction hypothesis. Therefore,
-\[g_p(s') \le g(s_p) + \epsilon c(s_p,s') \le \epsilon(g^*(s_p) + c(s_p,s')) = \epsilon g^*(s').\]
+Finally, suppose $s_j \notin OPEN\cup BE\cup CLOSED$ for all $j<i$. By consistency, it must be the case that $g(s_i) = g^*(s_i)$. Furthermore, since $s_{i-1} \notin CLOSED$ even though $bp(s_i) = s_{i-1}$, $s_i$ could not have been added to $OPEN$ by an expansion. Instead, it must have been transferred there from $FROZEN$. Therefore,
+\[g_p(s_i) \le \epsilon g(s_i) = \epsilon g^*(s_i)\]
 
-Finally, if a non-immediate predecessor $s_p$ of $s'$ is in $CLOSED$, then $g(s_p) \le \epsilon g^*(s_p)$ by the induction hypothesis. Therefore,
-\[g_p(s') \le g(s_p) + 2c_l \le \epsilon(g^*(s_p) + c^*(s_p,s')) = \epsilon g^*(s').\]
-
-In either case,
-\[g_p(s') + \epsilon h(s',s) \le \epsilon\left(g^*(s') + c^*(s',s)\right) = \epsilon g^*(s).\]
+In all three cases,
+\[g_p(s_i) + \epsilon h(s_i,s) \le \epsilon\left(g^*(s_i) + c^*(s_i,s)\right) = \epsilon g^*(s).\]
 Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
