@@ -137,14 +137,15 @@ Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all ed
 \label{lem:prop}
 At all times, the following invariants hold:
 \begin{itemize}
-\item $BE\subset CLOSED$ and $FROZEN\subset CLOSED$
 \item $OPEN\cap CLOSED = \emptyset$
+\item $BE\cup FROZEN \subset CLOSED$
 \item $s\in OPEN\cup BE\cup FROZEN \Rightarrow g(s) < v(s)$
 \item $s\notin OPEN\cup BE\cup FROZEN \Rightarrow g(s) = v(s)$
 \item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
 \item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
 \item $s\ne s_{start} \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s)$
 \item $s\in OPEN\cup CLOSED \Rightarrow g_p(s) \le \epsilon g(s)$
+\item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime during the current main() loop iteration
 \end{itemize}
 \end{lemma}
 
@@ -155,7 +156,7 @@ Induction on time.
 \begin{lemma}
 \label{lem:indep}
 At all times, for all states $s,s' \ne s_{start}$:
-\[g(s) + f(s') - f(s) + t \le g_p(s') + \epsilon h(s',s).\]
+\[g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l \le g_p(s') + \epsilon h(s',s).\]
 \end{lemma}
 
 \begin{proof}
@@ -171,37 +172,34 @@ At all times, for all states $s,s' \ne s_{start}$:
 
 \begin{lemma}
 \label{lem:bound}
-$bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
+For all states $s$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
 \end{lemma}
 
 \begin{proof}
 By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
 
-For the second part, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
+To prove the second claim, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
 \end{proof}
 
 \begin{thm}
 \label{thm:subopt}
-For all states $s$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
+For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
 \end{thm}
 
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s$
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$
 %, such that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$.
-There are three cases to consider, our first branch depending on whether there exists $s_i\in\pi$ such that $s_i\in CLOSED\setminus BE$.
+There are two cases to consider, depending on whether there exists $s_i\in\pi$ such that $s_i\in CLOSED\setminus BE$.
 
-If so, choose the maximum such $i$. Since $s_i$ was expanded and yet $s_{i+1}\notin CLOSED\setminus BE$,  it follows that $s_{i+1}\in OPEN \cup BE$ and
-\[g_p(s_{i+1}) \le \epsilon(g^*(s_i) + c(s_i,s_{i+1})) = \epsilon g^*(s_{i+1})\]
+If so, choose the maximum such $i$. Since $s_i$ was expanded and yet $s_{i+1}\notin CLOSED\setminus BE$,  it follows that $s_{i+1}\in OPEN \cup BE$ and, by the induction hypothesis,
+\[g_p(s_{i+1}) \le \epsilon g^*(s_i) + \epsilon c(s_i,s_{i+1}) = \epsilon g^*(s_{i+1})\]
 
-One the other hand, suppose there is no $s_i\in CLOSED\setminus BE$. Suppose also that every $s_i\in OPEN\cup BE$ was opened by an expansion. Then the entire path $\pi$ was consistent when this main() loop iteration started; therefore, $g_p(s) \le \epsilon g(s) = \epsilon g^*(s)$ and we are done.
-
-In the final case, choose the minimum $i$ such that $s_i\in OPEN\cup BE$ and $s_i$ was opened by ``thawing" the $FROZEN$ list. Then $g(s_i) = g^*(s_i)$. Therefore,
+One the other hand, suppose there is no $s_i\in CLOSED\setminus BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. Then $s_j\notin OPEN\cup CLOSED$ for all $j<i$, which by Lemma \ref{lem:prop} implies $g(s_j)=v(s_j)$ and $g(s_i) = \sum_{j=1}^i c(s_{j-1},s_j) = g^*(s_i)$. Therefore,
 \[g_p(s_i) \le \epsilon g(s_i) = \epsilon g^*(s_i)\]
-
-In the first and third cases, we found an $s'\in OPEN\cup BE$ such that
+In either case, we found an $s'\in OPEN\cup BE$ such that
 \[g_p(s') + \epsilon h(s',s) \le \epsilon\left(g^*(s') + c^*(s',s)\right) = \epsilon g^*(s).\]
 Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
