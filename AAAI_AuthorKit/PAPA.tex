@@ -47,18 +47,25 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \section{Fancy Stuff}
 
 \begin{algorithm}
-\caption{bound($s$)}
-\label{alg:bound}
+\caption{Auxiliary Functions}
+\label{alg:aux}
 \begin{algorithmic}
+\STATE \textbf{FUNCTION} $f(s)$
+\RETURN $g(s) + wh(s,s_{goal})$
+\STATE \textbf{FUNCTION} $g_{back}(s',s)$
+\IF{$w \le \epsilon$}
+\RETURN $g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l$
+\ELSE
+\RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
+\ENDIF
+\STATE \textbf{FUNCTION} $bound(s)$
 \STATE $g_{front} := \infty$
 \STATE $s' :=$ first node in $OPEN \cup BE$
-\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l$
-\WHILE{$g_{back} < g(s) \le g_{front}$}
+\WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
 \STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
 \STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
-\STATE $g_{back} := g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l$
 \ENDWHILE
-\RETURN $\min(g_{front},\;g_{back})$
+\RETURN $\min(g_{front},\;g_{back}(s',s))$
 \end{algorithmic}
 \end{algorithm}
 
@@ -69,10 +76,10 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
 \IF{$s'$ was not yet seen in this main() iteration}
-\STATE $g_p(s') := \infty$
 \IF{$s'$ has not been generated yet}
 \STATE $g(s') := v(s') := \infty$
 \ENDIF
+\STATE $g_p(s') := g(s') + 2(\epsilon-1)c_l$
 \ENDIF
 \STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
@@ -120,18 +127,18 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \STATE $FROZEN := \{s_{start}\}$
 \STATE $g(s_{start}) := 0$
 \REPEAT
-\STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\epsilon]$
+\STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
 \FORALL{$s\in OPEN$}
-\STATE $g_p(s) := \epsilon g(s)$
+\STATE $g_p(s) := g(s) + 2(\epsilon-1)c_l$
 \ENDFOR
 \STATE run PARA* on multiple threads in parallel
 \UNTIL{path is good enough or planning time runs out}
 \end{algorithmic}
 \end{algorithm}
 
-Keys are always computed by $f(s) = g(s) + wh(s,s_{goal})$, and we assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $\epsilon$ decreases between iterations of the main() loop. $v(s)$ is included to aid the analysis but is never used in the algorithm. In main(), the loops involving all $s\notin OPEN$ are computed lazily when those states are first encountered.
+We assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $v(s)$ is included to aid the analysis but is never used in the algorithm.
 
 \begin{lemma}
 \label{lem:prop}
@@ -143,8 +150,7 @@ At all times, the following invariants hold:
 \item $s\notin OPEN\cup BE\cup FROZEN \Rightarrow g(s) = v(s)$
 \item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
 \item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
-\item $s\ne s_{start} \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s)$
-\item $s\in OPEN\cup CLOSED \Rightarrow g_p(s) \le \epsilon g(s)$
+\item $g(s) + (\epsilon-1)c_l \le g_p(s)$
 \item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime during the current main() loop iteration
 \end{itemize}
 \end{lemma}
@@ -155,17 +161,26 @@ Induction on time.
 
 \begin{lemma}
 \label{lem:indep}
-At all times, for all states $s,s' \ne s_{start}$:
-\[g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l \le g_p(s') + \epsilon h(s',s).\]
+At all times, for all states $s,s'$:
+\[g_{back}(s',s) \le g_p(s') + \epsilon h(s',s).\]
 \end{lemma}
 
 \begin{proof}
+If $w \le \epsilon$, then
 \begin{eqnarray*}
 &&g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l
 \\&=& g(s') + w(h(s',s_{goal}) - h(s,s_{goal})) + (2\epsilon-w-1)c_l
 \\&\le& g(s') + wh(s',s) + (2\epsilon-w-1)c_l
 \\&\le& g(s') + \epsilon h(s',s) + (w-\epsilon)c_l + (2\epsilon-w-1)c_l
 \\&=& g(s') + (\epsilon-1)c_l + \epsilon h(s',s)
+\\&\le& g_p(s') + \epsilon h(s',s)
+\end{eqnarray*}
+On the other hand, if $w > \epsilon$, then
+\begin{eqnarray*}
+&&\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l
+\\&=& \frac\epsilon w\left(g(s') + w(h(s',s_{goal}) - h(s,s_{goal})) \right) + (\epsilon-1)c_l
+\\&\le& g(s') + \epsilon(h(s',s_{goal}) - h(s,s_{goal})) + (\epsilon-1)c_l
+\\&\le& g(s') + (\epsilon-1)c_l + \epsilon h(s',s)
 \\&\le& g_p(s') + \epsilon h(s',s)
 \end{eqnarray*}
 \end{proof}
@@ -176,7 +191,7 @@ For all states $s$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h
 \end{lemma}
 
 \begin{proof}
-By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g(s) + f(s') - f(s) + (2\epsilon-w-1) c_l$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
+By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g_{back}(s',s)$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
 
 To prove the second claim, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
@@ -184,23 +199,33 @@ To prove the second claim, note that the loop in $bound(s)$ terminates under onl
 
 \begin{thm}
 \label{thm:subopt}
-For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
+For all $s\in OPEN\cup BE$, if $s$ is not $s_{start}$ or one of its optimal-path successors, then $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
 \end{thm}
 
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$
-%, such that $bp(s_j) = s_{j-1}$ whenever $g(s_j) = g^*(s_j)$.
-There are two cases to consider, depending on whether there exists $s_i\in\pi$ such that $s_i\in CLOSED\setminus BE$.
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$.
+There are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
 
-If so, choose the maximum such $i$. Since $s_i$ was expanded and yet $s_{i+1}\notin CLOSED\setminus BE$,  it follows that $s_{i+1}\in OPEN \cup BE$ and, by the induction hypothesis,
-\[g_p(s_{i+1}) \le \epsilon g^*(s_i) + \epsilon c(s_i,s_{i+1}) = \epsilon g^*(s_{i+1})\]
+If so, then $expand(s_{i-1})$ has assigned to $g_p(s_i)$. Hence by the induction hypothesis,
+\begin{eqnarray*}
+g_p(s_i) &\le& v(s_{i-1}) + \epsilon c(s_{i-1},s_i)
+\\&\le& \epsilon g^*(s_{i-1}) + \epsilon c(s_{i-1},s_i)
+\\&=& \epsilon g^*(s_i)
+\end{eqnarray*}
 
-One the other hand, suppose there is no $s_i\in CLOSED\setminus BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. Then $s_j\notin OPEN\cup CLOSED$ for all $j<i$, which by Lemma \ref{lem:prop} implies $g(s_j)=v(s_j)$ and $g(s_i) = \sum_{j=1}^i c(s_{j-1},s_j) = g^*(s_i)$. Therefore,
-\[g_p(s_i) \le \epsilon g(s_i) = \epsilon g^*(s_i)\]
-In either case, we found an $s'\in OPEN\cup BE$ such that
-\[g_p(s') + \epsilon h(s',s) \le \epsilon\left(g^*(s') + c^*(s',s)\right) = \epsilon g^*(s).\]
+On the other hand, suppose $s_{i-1}\notin CLOSED$. Choose the maximum $j<i$ such that $s_j\in CLOSED$, or $j=0$ if there is no such $j$. Then $j\le i-2$ and, by the induction hypothesis, $g(s_j)\le \epsilon g^*(s_j)$. Furthermore, $g(s_k) = v(s_k)$ for all $j<k<i$. Let $g_{old}(s_i)$ denote the value of $g(s_i)$ at the start of the current main() loop iteration. Then,
+\begin{eqnarray*}
+g_p(s_i) &\le& g_{old}(s_i) + 2(\epsilon-1)c_l
+\\&\le& v(s_j) + c^*(s_j,s_i) + 2(\epsilon-1)c_l
+\\&\le& \epsilon g^*(s_j) + c^*(s_j,s_i) + 2(\epsilon-1)c_l
+\\&=& \epsilon (g^*(s_j) + c^*(s_j,s_i)) + (\epsilon-1)(2c_l - c^*(s_j,s_i))
+\\&\le& \epsilon g^*(s_i)
+\end{eqnarray*}
+
+In both cases, we found that
+\[g_p(s_i) + \epsilon h(s_i,s) \le \epsilon g^*(s_i) + \epsilon c^*(s_i,s) = \epsilon g^*(s).\]
 Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
