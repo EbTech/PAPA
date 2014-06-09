@@ -79,7 +79,7 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \IF{$s'$ has not been generated yet}
 \STATE $g(s') := v(s') := \infty$
 \ENDIF
-\STATE $g_p(s') := g(s') + 2(\epsilon-1)c_l$
+\STATE $g_p(s') := g(s') + (\epsilon-1)\min(g(s'),\;2c_l)$
 \ENDIF
 \STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
@@ -131,7 +131,7 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
 \FORALL{$s\in OPEN$}
-\STATE $g_p(s) := g(s) + 2(\epsilon-1)c_l$
+\STATE $g_p(s) := g(s) + (\epsilon-1)\min(g(s),\;2c_l)$
 \ENDFOR
 \STATE run PARA* on multiple threads in parallel
 \UNTIL{path is good enough or planning time runs out}
@@ -150,7 +150,7 @@ At all times, the following invariants hold:
 \item $s\notin OPEN\cup BE\cup FROZEN \Rightarrow g(s) = v(s)$
 \item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
 \item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
-\item $g(s) + (\epsilon-1)c_l \le g_p(s)$
+\item $s\ne s_{start} \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s) \le \epsilon g(s)$
 \item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime during the current main() loop iteration
 \end{itemize}
 \end{lemma}
@@ -161,7 +161,7 @@ Induction on time.
 
 \begin{lemma}
 \label{lem:indep}
-At all times, for all states $s,s'$:
+At all times, for all states $s$ and $s'\ne s_{start}$:
 \[g_{back}(s',s) \le g_p(s') + \epsilon h(s',s).\]
 \end{lemma}
 
@@ -185,6 +185,8 @@ On the other hand, if $w > \epsilon$, then
 \end{eqnarray*}
 \end{proof}
 
+TODO: since Lemma \ref{lem:indep} fails when $s'=s_{start}$, if $s_{start} \in OPEN\cup BE$, then $g_{front}$ will have to be initialized to $\epsilon h(s_{start},s)$ instead of $\infty$ in order for Lemma \ref{lem:bound} to hold.
+
 \begin{lemma}
 \label{lem:bound}
 For all states $s$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
@@ -199,14 +201,15 @@ To prove the second claim, note that the loop in $bound(s)$ terminates under onl
 
 \begin{thm}
 \label{thm:subopt}
-For all $s\in OPEN\cup BE$, if $s$ is not $s_{start}$ or one of its optimal-path successors, then $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
+For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in CLOSED$, $g(s) \le v(s) \le \epsilon g^*(s)$.
 \end{thm}
 
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$.
-There are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. If $i < 2$, then
+\[g_p(s_i) \le \epsilon g(s_i) = g^*(s_i)\]
+if $i \ge 2$, there are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
 
 If so, then $expand(s_{i-1})$ has assigned to $g_p(s_i)$. Hence by the induction hypothesis,
 \begin{eqnarray*}
@@ -224,7 +227,7 @@ g_p(s_i) &\le& g_{old}(s_i) + 2(\epsilon-1)c_l
 \\&\le& \epsilon g^*(s_i)
 \end{eqnarray*}
 
-In both cases, we found that
+In all three cases, we found that
 \[g_p(s_i) + \epsilon h(s_i,s) \le \epsilon g^*(s_i) + \epsilon c^*(s_i,s) = \epsilon g^*(s).\]
 Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
