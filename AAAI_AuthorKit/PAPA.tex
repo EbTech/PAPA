@@ -59,7 +59,7 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
 \ENDIF
 \STATE \textbf{FUNCTION} $bound(s)$
-\STATE $g_{front} := \infty$
+\STATE $g_{front} := g_p(s)$
 \STATE $s' :=$ first node in $OPEN \cup BE$
 \WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
 \STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
@@ -70,7 +70,7 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \end{algorithm}
 
 \begin{algorithm}
-\caption{expand($s$)}
+\caption{expand($s$, $g_{bound}$)}
 \label{alg:expand}
 \begin{algorithmic}
 \FORALL{$s' \in successors(s)$}
@@ -79,7 +79,7 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \IF{$s'$ has not been generated yet}
 \STATE $g(s') := v(s') := \infty$
 \ENDIF
-\STATE $g_p(s') := g(s') + (\epsilon-1)\min(g(s'),\;2c_l)$
+\STATE $g_p(s') := g(s') + 2(\epsilon-1)c_l$
 \ENDIF
 \STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
@@ -107,12 +107,11 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \STATE wait until $OPEN$ or $BE$ change
 \STATE continue
 \ENDIF
-\STATE $g_{bound} := bound(s)$
 \STATE $v_{expand} := g(s)$
 \STATE insert $s$ into $CLOSED$
 \STATE insert $s$ into $BE$ with key $f(s)$
 \STATE UNLOCK $s$
-\STATE expand($s$)
+\STATE expand($s$, $bound(s)$)
 \STATE $v(s) := v_{expand}$
 \STATE remove $s$ from $BE$
 \ENDWHILE
@@ -123,9 +122,9 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \caption{main()}
 \label{alg:main}
 \begin{algorithmic}
-\STATE $OPEN := BE := \emptyset$
-\STATE $FROZEN := \{s_{start}\}$
-\STATE $g(s_{start}) := 0$
+\STATE $OPEN := BE := CLOSED := FROZEN := \emptyset$
+\STATE $g(s_{start}) := v(s_{start}) := 0$
+\STATE expand($s_{start}$, $0$)
 \REPEAT
 \STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
@@ -150,7 +149,7 @@ At all times, the following invariants hold:
 \item $s\notin OPEN\cup BE\cup FROZEN \Rightarrow g(s) = v(s)$
 \item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
 \item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
-\item $s\ne s_{start} \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s) \le \epsilon g(s)$
+\item $s\in OPEN\cup CLOSED \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s) \le \epsilon g(s)$
 \item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime during the current main() loop iteration
 \end{itemize}
 \end{lemma}
@@ -161,7 +160,7 @@ Induction on time.
 
 \begin{lemma}
 \label{lem:indep}
-At all times, for all states $s$ and $s'\ne s_{start}$:
+At all times, for all states $s$ and $s'\notin \{s_{start},s\}$:
 \[g_{back}(s',s) \le g_p(s') + \epsilon h(s',s).\]
 \end{lemma}
 
@@ -189,14 +188,14 @@ TODO: since Lemma \ref{lem:indep} fails when $s'=s_{start}$, if $s_{start} \in O
 
 \begin{lemma}
 \label{lem:bound}
-For all states $s$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
+For all $s\in OPEN\cup BE$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
 \end{lemma}
 
 \begin{proof}
-By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g_{back}(s',s)$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
+By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for $s'=s$ as well as for the other states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g_{back}(s',s)$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
 
-To prove the second claim, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
+To prove the second claim, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}(s',s)$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
 \end{proof}
 
 \begin{thm}
@@ -207,9 +206,9 @@ For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. If $i < 2$, then
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. If $i = 1$, then
 \[g_p(s_i) \le \epsilon g(s_i) = g^*(s_i)\]
-if $i \ge 2$, there are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
+If $i \ge 2$, there are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
 
 If so, then $expand(s_{i-1})$ has assigned to $g_p(s_i)$. Hence by the induction hypothesis,
 \begin{eqnarray*}
