@@ -107,9 +107,9 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \STATE wait until $OPEN$ or $BE$ change
 \STATE continue
 \ENDIF
-\STATE $v_{expand} := g(s)$
 \STATE insert $s$ into $CLOSED$
 \STATE insert $s$ into $BE$ with key $f(s)$
+\STATE $v_{expand} := g(s)$
 \STATE UNLOCK $s$
 \STATE expand($s$, $bound(s)$)
 \STATE $v(s) := v_{expand}$
@@ -184,8 +184,6 @@ On the other hand, if $w > \epsilon$, then
 \end{eqnarray*}
 \end{proof}
 
-TODO: since Lemma \ref{lem:indep} fails when $s'=s_{start}$, if $s_{start} \in OPEN\cup BE$, then $g_{front}$ will have to be initialized to $\epsilon h(s_{start},s)$ instead of $\infty$ in order for Lemma \ref{lem:bound} to hold.
-
 \begin{lemma}
 \label{lem:bound}
 For all $s\in OPEN\cup BE$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
@@ -241,13 +239,13 @@ At the end of a main() loop iteration, the path obtained by following the back-p
 The termination condition of PARA* implies $g(s_{goal}) \le bound(s_{goal})$. By construction, the path given by following back-pointers costs at most $g(s_{goal})$. The claim now follows from Theorem \ref{thm:subopt}.
 \end{proof}
 
-\section{Performance Guarantees}
+\section{Performance Guarantees - Blind PARA*}
 
-Consider a simplified version of PARA* which ignores the loop in bound($s$): we call it blind PARA*. In this case, no $g_p$ values need be computed nor stored, and $bound(s)$ is simply $g(s) + f_{min} - f(s) + (2\epsilon-w-1)c_l$ where $f_{min}$ is the minimum $f$-value in $OPEN \cup BE$. Blind PARA* can only expand states which would be proved safe with zero iterations of the bound($s$) loop in ordinary PARA*. Thus, all of the performance guarantees we prove for blind PARA* also hold for PARA*. 
+By deleting the while loop in bound($s$), we arrive at a simplified version of the algorithm which we call Blind PARA*. $g_p$ values are no longer used, so their computation can be ommitted. Blind PARA* can only expand states which would be proved safe in PARA* using zero iterations of the bound($s$) loop. Thus, every performance guarantees that we prove for Blind PARA* also holds for PARA*. 
 
 \begin{thm}
 \label{thm:depth}
-If $w \le 1$, the parallel depth of blind PARA* is bounded above by
+If $w \le 1$, the parallel depth of Blind PARA* is bounded above by
 \[\min\left(\frac{\epsilon g^*(s_{goal})}{(1-w)c_l},\;
 \frac{\left(\epsilon g^*(s_{goal})\right)^2 }{(4\epsilon-2w-2)c_l^2}\right).\]
 \end{thm}
@@ -256,10 +254,14 @@ If $w \le 1$, the parallel depth of blind PARA* is bounded above by
 We prove the two bounds separately. For the first, note that if the lowest $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can simultaneously be expanded. Since $h$ is consistent, the successors' $f$-values is at least $f_{min} + (1-w)c_l$. Therefore, the depth is at most
 \[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\]
 
-For the other bound, notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + (2\epsilon-w-1)c_l) / c_l = f_{min}/c_l + 2\epsilon-w-1$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + (2\epsilon-w-1)c_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iteration count is:
+For the other bound, write $t$ for $2\epsilon-w-1$. Notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + tc_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iteration count is (TODO: fix this analysis)
 
-$2\epsilon-w-1 + 2(2\epsilon-w-1) + 3(2\epsilon-w-1) + ... + \epsilon g^*(s_{goal})/c_l
-\approxeq (\epsilon g^*(s_{goal})/c_l )^2 / ( 4\epsilon-2w-2 ).$
+\begin{eqnarray*}
+&&t + 2t + 3t + ... + \epsilon g^*(s_{goal})/c_l
+\\&\le& \epsilon  g^*(s_{goal})/(tc_l)(2+\epsilon g^*(s_{goal})/c_l+t)/2
+\\&\le& (\epsilon g^*(s_{goal})/c_l )^2 (tc_l/(\epsilon g^*(s_{goal})) + 1/(2t) + c_l/(2\epsilon g^*(s_{goal})))
+\\&\le& (\epsilon g^*(s_{goal})/c_l )^2 (t + 1/(2t) + 1/2)
+\end{eqnarray*}
 \end{proof}
 
 \section{Edgewise Supobtimality}
@@ -280,9 +282,13 @@ It follows from Lemma \ref{thm:subopt} that $g'(s) \le \epsilon g'^*(s) \le \eps
 
 \begin{cor}
 \label{cor:delta}
-If $w \le 1$, the parallel depth of blind PARA* can be improved to
+If $w \le 1$ and $c_m \le g^*(s) / k(s)$, the parallel depth of Blind PARA* can be improved to
 \[\frac{\epsilon g^*(s_{goal})}{(1-w)(c_l+(\epsilon-1)c_m)}.\]
+If in addition $c_m \ge g^*(s)/(mk(s))$, the depth is at most
+\[\frac{\epsilon mk(s)}{(1-w)(\epsilon-1)}\]
 \end{cor}
+
+In other words, if we know the mean edge cost up to a small constant factor, we can find approximately optimal paths in a depth which is within a small factor of the ``omnicient" algorithm that expands only along the optimal path.
 
 \bibliographystyle{aaai}
 \bibliography{PARA}
