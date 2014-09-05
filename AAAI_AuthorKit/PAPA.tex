@@ -44,62 +44,46 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \end{quote}
 \end{abstract}
 
-\section{Fancy Stuff}
+\section{Introduction}
 
-\begin{algorithm}
-\caption{Auxiliary Functions}
-\label{alg:aux}
-\begin{algorithmic}
-\STATE \textbf{FUNCTION} $f(s)$
-\RETURN $g(s) + wh(s,s_{goal})$
-\STATE \textbf{FUNCTION} $g_{back}(s',s)$
-\IF{$w \le \epsilon$}
-\RETURN $g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l$
-\ELSE
-\RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
-\ENDIF
-\STATE \textbf{FUNCTION} $bound(s)$
-\STATE $g_{front} := g_p(s)$
-\STATE $s' :=$ first node in $OPEN \cup BE$
-\WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
-\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
-\STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
-\ENDWHILE
-\RETURN $\min(g_{front},\;g_{back}(s',s))$
-\end{algorithmic}
-\end{algorithm}
+Bread-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which nodes are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality by a specified factor. Anytime Reparing A* (ARA*) is an anytime search algorithm, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows. With the advent of multi-core processors, making use of parallelism have become a priority for algorithm designers. Parallel A* for Short Expansions (PA*SE) offers nearly linear speedup in the number of cores, provided the search is dominated by long expansion times.
 
-\begin{algorithm}
-\caption{expand($s$, $g_{bound}$)}
-\label{alg:expand}
-\begin{algorithmic}
-\FORALL{$s' \in successors(s)$}
-\STATE LOCK $s'$
-\IF{$s'$ was not yet seen in this main() iteration}
-\IF{$s'$ has not been generated yet}
-\STATE $g(s') := v(s') := \infty$
-\ENDIF
-\STATE $g_p(s') := g(s') + 2(\epsilon-1)c_l$
-\ENDIF
-\STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
-\IF {$g(s') > g(s) + c(s,s')$}
-\STATE $g(s') = g(s) + c(s,s')$
-\STATE $bp(s') = s$
-\IF{$s' \in CLOSED$}
-\STATE insert $s'$ in $FROZEN$
-\ELSE
-\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
-\ENDIF
-\ENDIF
-\STATE UNLOCK $s'$
-\ENDFOR
+In this paper, we present Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both ARA* and PA*SE. Like ARA*, it gradually reduces the weight which biases toward the goal, resulting in incrementally better solutions. Like PA*SE, it often offers approximately linear speedup. However, our design and analysis is tighter than PA*SE, even in the non-anytime setting. This enables several theoretical results, as well as moderate performance gains over PA*SE in certain settings.
 
-\end{algorithmic}
-\end{algorithm}
+\section{Problem Formulation}
+
+We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$. We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
+
+\section{Algorithm Design}
+
+Algorithm \ref{alg:parastar} is a skeleton for the PARA* algorithm. It begins by clearing the four main data structures and expanding out all edges coming from the start node. When PARA* is run in an anytime fashion, it then enters a loop in which the data structures are ``thawed" in preparation for each search iteration. On a first read-through, we advise ignoring the $FROZEN$ list as well as calls to $thaw()$ which are only needed for anytime operation.
+
+Intuitively, $OPEN$ represents the frontier of candidate states for expansion, initially containing only the direct successors of $s_{start}$. Once selected for expansion, a state moves from $OPEN$ to $CLOSED$. $BE$ represents the freshly $CLOSED$, i.e. the states which are still being expanded. Its cardinality $|BE|$ can never exceed the number of threads.
 
 \begin{algorithm}
 \caption{PARA*}
-\label{alg:PARA*}
+\label{alg:parastar}
+\begin{algorithmic}
+\STATE $OPEN := BE := CLOSED := FROZEN := \emptyset$
+\STATE $g(s_{start}) := 0$
+\STATE expand($s_{start}$, $0$)
+\REPEAT
+\STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
+\STATE thaw()
+\STATE run search() on multiple threads in parallel
+\UNTIL{path is good enough or planning time runs out}
+\end{algorithmic}
+\end{algorithm}
+
+In Algorithm \ref{alg:search}, we see that the main algorithm run by each thread resembles PARA*. $OPEN$ is represented by a balanced binary tree sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
+
+Each thread begins by attempting to extract an element $s\in OPEN$ which is \textbf{safe} for expansion. A state is considered safe if its current distance label $g(s)$ is known to be a good enough approximation of the true distance; that is, $g(s) \le \epsilon c^*(s_{start},s)$. Each time a thread finds a safe $s$, it performs an expansion. The assignable variables $v(s)$ are never used, and exist only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion.
+
+There are many ways to define the auxiliary function $bound(s)$; we present one in Algorithm \ref{alg:aux}. Its most crucial property is that $bound(s) \le \epsilon c^*(s_{start},s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. In addition, to ensure progress, $bound(s)$ must be defined such that at all times, the condition $g(s) \le bound(s)$ holds for some $s\in OPEN$. Our implementation guarantees this for the state with minimal $g(s)$.
+
+\begin{algorithm}
+\caption{search()}
+\label{alg:search}
 \begin{algorithmic}
 \WHILE{$g(s_{goal}) > bound(s_{goal})$}
 \STATE among $s\in OPEN$ such that $g(s) \le bound(s)$, remove one with the smallest $f(s)$ and LOCK $s$
@@ -118,26 +102,77 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 \end{algorithmic}
 \end{algorithm}
 
+Algorithm \ref{alg:expand} is the state expansion procedure. It takes not only the state $s$, but also the lower bound on $\epsilon c^*(s_{start},s)$ computed during the safety check. In the non-anytime special case, the first line assigning to $g_p$ can be understood as initializing it to $\infty$ along with $g$ and $v$. $bp$ stores back pointers which can be followed from $s$ back to $s_{start}$ to yield a path of cost at most $g(s)$. $c_l \ge 0$ is the best known lower bound on the graph's edge costs.
+
+Atomic locks are used for concurrency; for conceptual clarity, the mechanism presented here is considerably simpler than our implementation. We will not go into detail here, but it bears mentioning that every use of the main data structures is guarded by one global lock.
+
+$g_p(s)$ is perhaps the least intuitive variable in PARA*. Its semantics is similar to $bound(s)$ but somewhat more intricate. $g_p(s)/\epsilon$ is a lower bound on the minimum-cost path from $s_{start}$ to $s$ whose predecessor to $s$ has already been expanded. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. This inequality should also hold for every $s'$ which was expanded (hence $CLOSED$) during prior anytime iterations.
+
 \begin{algorithm}
-\caption{main()}
-\label{alg:main}
+\caption{expand($s$, $g_{bound}$)}
+\label{alg:expand}
 \begin{algorithmic}
-\STATE $OPEN := BE := CLOSED := FROZEN := \emptyset$
-\STATE $g(s_{start}) := v(s_{start}) := 0$
-\STATE expand($s_{start}$, $0$)
-\REPEAT
-\STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
+\FORALL{$s' \in successors(s)$}
+\STATE LOCK $s'$
+\IF{$s'\notin OPEN\cup CLOSED$}
+\IF{$s'$ has not been generated yet}
+\STATE $g(s') := v(s') := \infty$
+\ENDIF
+\STATE $g_p(s') := g(s') + 2(\epsilon-1)c_l$
+\ENDIF
+\STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
+\IF {$g(s') > g(s) + c(s,s')$}
+\STATE $g(s') = g(s) + c(s,s')$
+\STATE $bp(s') = s$
+\IF{$s' \in CLOSED$}
+\STATE insert $s'$ in $FROZEN$
+\ELSE
+\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
+\ENDIF
+\ENDIF
+\STATE UNLOCK $s'$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{Auxiliary Functions}
+\label{alg:aux}
+\begin{algorithmic}
+\STATE \textbf{FUNCTION} $successors(s)$
+\RETURN $\{s' \mid c(s,s')<\infty\}$
+
+\STATE \textbf{FUNCTION} $f(s)$
+\RETURN $g(s) + wh(s,s_{goal})$
+
+\STATE \textbf{FUNCTION} $g_{back}(s',s)$
+\IF{$s' = NULL$}
+\RETURN $\infty$
+\ELSIF{$w \le \epsilon$}
+\RETURN $g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l$
+\ELSE
+\RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
+\ENDIF
+
+\STATE \textbf{FUNCTION} $bound(s)$
+\STATE $g_{front} := g_p(s)$
+\STATE $s' :=$ first node in $OPEN \cup BE$
+\WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
+\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
+\STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
+\ENDWHILE
+\RETURN $\min(g_{front},\;g_{back}(s',s))$
+
+\STATE \textbf{PROCEDURE} $thaw()$
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
 \FORALL{$s\in OPEN$}
 \STATE $g_p(s) := g(s) + (\epsilon-1)\min(g(s),\;2c_l)$
 \ENDFOR
-\STATE run PARA* on multiple threads in parallel
-\UNTIL{path is good enough or planning time runs out}
 \end{algorithmic}
 \end{algorithm}
 
-We assume all edge costs are bounded below by $c_l$. $h$ must be consistent: $h(s,s') \le c(s,s')$ and $h(s,s') \le h(s,s'')+h(s'',s')$ for all $s,s',s''$. For most applications, we recommend using $w = \epsilon$. However, our analysis will show that using small $w$ yields strong parallelism guarantees. All operations on the data structures $OPEN,BE,CLOSED,FROZEN$ are assumed to be atomic, i.e. they are implicitly preceded and succeeded by synchronous locks and unlocks to the data structure, respectively. $v(s)$ is included to aid the analysis but is never used in the algorithm.
+Finally, Algorithm \ref{alg:aux} lists the functions referenced in earlier listings, as well as the $thaw()$ procedure needed for the anytime extension. The following lemma lists some easily checked invariants.
 
 \begin{lemma}
 \label{lem:prop}
@@ -145,8 +180,8 @@ At all times, the following invariants hold:
 \begin{itemize}
 \item $OPEN\cap CLOSED = \emptyset$
 \item $BE\cup FROZEN \subset CLOSED$
-\item $s\in OPEN\cup BE\cup FROZEN \Rightarrow g(s) < v(s)$
-\item $s\notin OPEN\cup BE\cup FROZEN \Rightarrow g(s) = v(s)$
+\item $s\in OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) < v(s)$
+\item $s\notin OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) = v(s)$
 \item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
 \item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
 \item $s\in OPEN\cup CLOSED \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s) \le \epsilon g(s)$
@@ -157,6 +192,10 @@ At all times, the following invariants hold:
 \begin{proof}
 Induction on time.
 \end{proof}
+
+\section{Analysis}
+
+We begin by looking at the properties of $bound(s)$ as listed in Algorithm \ref{alg:aux}.
 
 \begin{lemma}
 \label{lem:indep}
@@ -205,7 +244,7 @@ For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in
 We proceed by induction on the order in which states are expanded.
 
 Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. If $i = 1$, then
-\[g_p(s_i) \le \epsilon g(s_i) = g^*(s_i)\]
+\[g_p(s_i) \le \epsilon g(s_i) = \epsilon g^*(s_i)\]
 If $i \ge 2$, there are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
 
 If so, then $expand(s_{i-1})$ has assigned to $g_p(s_i)$. Hence by the induction hypothesis,
@@ -289,6 +328,10 @@ If in addition $c_m \ge g^*(s)/(mk(s))$, the depth is at most
 \end{cor}
 
 In other words, if we know the mean edge cost up to a small constant factor, we can find approximately optimal paths in a depth which is within a small factor of the ``omnicient" algorithm that expands only along the optimal path.
+
+\section{Experiments}
+
+\section{Conclusion}
 
 \bibliographystyle{aaai}
 \bibliography{PARA}
