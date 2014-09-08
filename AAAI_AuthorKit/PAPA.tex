@@ -54,32 +54,22 @@ In this paper, we present Parallel Anytime Repairing A* (PARA*), a simultaneous 
 
 We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$. We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
 
-\section{Algorithm Design}
+\section{Review of wPA*SE}
 
-Algorithm \ref{alg:parastar} is a skeleton for the PARA* algorithm. It begins by clearing the four main data structures and expanding out all edges coming from the start node. When PARA* is run in an anytime fashion, it then enters a loop in which the data structures are ``thawed" in preparation for each search iteration. On a first read-through, we advise ignoring the $FROZEN$ list as well as calls to $thaw()$ which are only needed for anytime operation.
+We introduce an equivalent but slightly different presentation of wPASE* compared to the original \cite{asdf}, in order to clarify the role of the enhancements we will make. Algorithm \ref{alg:parastar} is a skeleton for the algorithm. It begins by clearing the four main data structures and expanding out all edges coming from the start node.
 
 Intuitively, $OPEN$ represents the frontier of candidate states for expansion, initially containing only the direct successors of $s_{start}$. Once selected for expansion, a state moves from $OPEN$ to $CLOSED$. $BE$ represents the freshly $CLOSED$, i.e. the states which are still being expanded. Its cardinality $|BE|$ can never exceed the number of threads.
 
 \begin{algorithm}
-\caption{PARA*}
+\caption{main()}
 \label{alg:parastar}
 \begin{algorithmic}
 \STATE $OPEN := BE := CLOSED := FROZEN := \emptyset$
 \STATE $g(s_{start}) := 0$
-\STATE expand($s_{start}$, $0$)
-\REPEAT
-\STATE choose $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
-\STATE thaw()
+\STATE expand($s_{start}$)
 \STATE run search() on multiple threads in parallel
-\UNTIL{path is good enough or planning time runs out}
 \end{algorithmic}
 \end{algorithm}
-
-In Algorithm \ref{alg:search}, we see that the main algorithm run by each thread resembles PARA*. $OPEN$ is represented by a balanced binary tree sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
-
-Each thread begins by attempting to extract an element $s\in OPEN$ which is \textbf{safe} for expansion. A state is considered safe if its current distance label $g(s)$ is known to be a good enough approximation of the true distance; that is, $g(s) \le \epsilon c^*(s_{start},s)$. Each time a thread finds a safe $s$, it performs an expansion. The assignable variables $v(s)$ are never used, and exist only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion.
-
-There are many ways to define the auxiliary function $bound(s)$; we present one in Algorithm \ref{alg:aux}. Its most crucial property is that $bound(s) \le \epsilon c^*(s_{start},s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. In addition, to ensure progress, $bound(s)$ must be defined such that at all times, the condition $g(s) \le bound(s)$ holds for some $s\in OPEN$. Our implementation guarantees this for the state with minimal $g(s)$.
 
 \begin{algorithm}
 \caption{search()}
@@ -95,32 +85,34 @@ There are many ways to define the auxiliary function $bound(s)$; we present one 
 \STATE insert $s$ into $BE$ with key $f(s)$
 \STATE $v_{expand} := g(s)$
 \STATE UNLOCK $s$
-\STATE expand($s$, $bound(s)$)
+\STATE expand($s$)
 \STATE $v(s) := v_{expand}$
 \STATE remove $s$ from $BE$
 \ENDWHILE
 \end{algorithmic}
 \end{algorithm}
 
-Algorithm \ref{alg:expand} is the state expansion procedure. It takes not only the state $s$, but also the lower bound on $\epsilon c^*(s_{start},s)$ computed during the safety check. In the non-anytime special case, the first line assigning to $g_p$ can be understood as initializing it to $\infty$ along with $g$ and $v$. $bp$ stores back pointers which can be followed from $s$ back to $s_{start}$ to yield a path of cost at most $g(s)$. $c_l \ge 0$ is the best known lower bound on the graph's edge costs.
+Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $BE$ are represented by balanced binary trees sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
 
-Atomic locks are used for concurrency; for conceptual clarity, the mechanism presented here is considerably simpler than our implementation. We will not go into detail here, but it bears mentioning that every use of the main data structures is guarded by one global lock.
+Each thread begins by attempting to extract an element $s\in OPEN$ which is \textbf{safe for expansion}. A state is considered safe if its current distance label $g(s)$ is known to be a good enough approximation of the true distance; that is, $g(s) \le \epsilon c^*(s_{start},s)$. This condition is crucial since wPA*SE expands each node at most once. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
 
-$g_p(s)$ is perhaps the least intuitive variable in PARA*. Its semantics is similar to $bound(s)$ but somewhat more intricate. $g_p(s)/\epsilon$ is a lower bound on the minimum-cost path from $s_{start}$ to $s$ whose predecessor to $s$ has already been expanded. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. This inequality should also hold for every $s'$ which was expanded (hence $CLOSED$) during prior anytime iterations.
+The assignable variables $v(s)$ and data structure $FROZEN$ are never used, and exist only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded.
+
+There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it should satisfy $bound(s) \le \epsilon c^*(s_{start},s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. In addition, to ensure progress, $bound(s)$ must be defined such that, at all times, the condition $g(s) \le bound(s)$ holds for some $s\in OPEN$. Our implementations guarantee this for the state with minimal $g(s)$. The wPA*SE implementation is listed in Algorithm \ref{alg:aux}.
+
+Intuitively, a state $s'\in OPEN\cup BE$ cannot possibly reduce $g(s)$ below $g(s') + h(s',s)$. It can be shown that if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. Provided $w \le \epsilon$, this means it suffices to check whether $g(s)$ may be dependent upon some $s'$ with $f(s') < f(s)$. Otherwise, $s$ is safe for expansion. See \cite{} for a proof that wPA*SE is $\max(w, \epsilon)$-optimal. In fact, it can be made $\epsilon$-optimal by checking all of $OPEN\cup BE$ instead of just the early elements. However, these checks can be expensive. The principal aim of our enhancements is to substantially reduce the number of checks needed.
+
+Atomic locks are used for concurrency; for conceptual clarity, the mechanism presented here is considerably simpler than our implementation. We will not go into detail here, but it bears mentioning that every use of the main data structures is guarded by one global lock. Finally, $bp$ stores back pointers which can be followed from $s$ back to $s_{start}$ to yield a path of cost at most $g(s)$.
 
 \begin{algorithm}
-\caption{expand($s$, $g_{bound}$)}
+\caption{expand($s$)}
 \label{alg:expand}
 \begin{algorithmic}
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
-\IF{$s'\notin OPEN\cup CLOSED$}
 \IF{$s'$ has not been generated yet}
 \STATE $g(s') := v(s') := \infty$
 \ENDIF
-\STATE $g_p(s') := g(s') + 2(\epsilon-1)c_l$
-\ENDIF
-\STATE $g_p(s') = \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
 \STATE $g(s') = g(s) + c(s,s')$
 \STATE $bp(s') = s$
@@ -145,6 +137,37 @@ $g_p(s)$ is perhaps the least intuitive variable in PARA*. Its semantics is simi
 \STATE \textbf{FUNCTION} $f(s)$
 \RETURN $g(s) + wh(s,s_{goal})$
 
+\STATE \textbf{FUNCTION} $bound(s)$
+\STATE $g_{front} := g(s)$
+\STATE $s' :=$ first node in $OPEN \cup BE$
+\WHILE{$f(s') < f(s)$ \AND $g(s) \le g_{front}$}
+\STATE $g_{front} := \min(g_{front},\;g(s') + \epsilon h(s',s))$
+\STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
+\ENDWHILE
+\RETURN $g_{front}$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Improvements toward ePA*SE}
+
+We introduce the variables $g_p(s)$. Its semantics is similar to $bound(s)$ but somewhat more intricate. $g_p(s)/\epsilon$ is a lower bound on the minimum-cost path from $s_{start}$ to $s$ whose predecessor to $s$ has already been expanded. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. This inequality should also hold for every $s'$ which was expanded (hence $CLOSED$) during prior anytime iterations. To maintain this invariant, we initialize $g_p(s)$ to $\infty$ along with $g(s)$ and $v(s)$, and then add the following line Immediately before the second \textbf{if} statement in expand($s$):
+\[g_p(s') := \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))\]
+
+Here, $g_{bound}$ is the lower bound on $\epsilon c^*(s_{start},s)$ computed when $bound(s)$ was called in the state expansion process, or $0$ if $s=s_{start}$. The new $bound(s)$, listed in Algorithm \ref{alg:aux2}, makes use of a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about costs, but ePA*SE can make use of larger bounds if available.
+
+TODO: explain changes to $bound(s)$.
+
+\section{PARA*: Parallel Anytime Reparing A*}
+
+Finally, we note that by analogy with ARA*, ePA*SE can be made into an anytime algorithm, iteratively computing solutions with shrinking suboptimality bounds. In main(), instead of calling the parallel search() only once, it's called repeatedly. Between iterations, the thaw() procedure in Algorithm \ref{aux2} must be called to place the $FROZEN$ states back into the $OPEN$ list. In addition, the $g_p$ values need to be reset. thaw() already does this for the $OPEN$ list. When another state is seen for the first time in the present iteration (or equivalently, expand() encounters an $s'\notin OPEN\cup CLOSED$), it performs the reset operation
+\[g_p(s') := g(s') + 2(\epsilon-1)c_l\]
+
+This is a generalization of the $g_p(s') = \infty$ step from the non-anytime version.
+
+\begin{algorithm}
+\caption{Auxiliary Functions 2}
+\label{alg:aux2}
+\begin{algorithmic}
 \STATE \textbf{FUNCTION} $g_{back}(s',s)$
 \IF{$s' = NULL$}
 \RETURN $\infty$
@@ -164,6 +187,7 @@ $g_p(s)$ is perhaps the least intuitive variable in PARA*. Its semantics is simi
 \RETURN $\min(g_{front},\;g_{back}(s',s))$
 
 \STATE \textbf{PROCEDURE} $thaw()$
+\STATE choose new $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
 \FORALL{$s\in OPEN$}
@@ -172,7 +196,7 @@ $g_p(s)$ is perhaps the least intuitive variable in PARA*. Its semantics is simi
 \end{algorithmic}
 \end{algorithm}
 
-Finally, Algorithm \ref{alg:aux} lists the functions referenced in earlier listings, as well as the $thaw()$ procedure needed for the anytime extension. The following lemma lists some easily checked invariants.
+The following lemma lists some easily checked invariants of ePA*SE and PARA*.
 
 \begin{lemma}
 \label{lem:prop}
@@ -195,7 +219,7 @@ Induction on time.
 
 \section{Analysis}
 
-We begin by looking at the properties of $bound(s)$ as listed in Algorithm \ref{alg:aux}.
+We begin by looking at the properties of $bound(s)$ as listed in Algorithm \ref{alg:aux2}.
 
 \begin{lemma}
 \label{lem:indep}
