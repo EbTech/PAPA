@@ -52,13 +52,15 @@ In this paper, we present Parallel Anytime Repairing A* (PARA*), a simultaneous 
 
 \section{Problem Formulation}
 
-We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$. We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
+We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$. We abbreviate $c^*(s_{start}, s)$ by $g^*(s)$.
+
+We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
 
 \section{Review of wPA*SE}
 
-We introduce an equivalent but slightly different presentation of wPASE* compared to the original \cite{asdf}, in order to clarify the role of the enhancements we will make. Algorithm \ref{alg:parastar} is a skeleton for the algorithm. It begins by clearing the four main data structures and expanding out all edges coming from the start node.
+In order to clarify the role of the enhancements we will make, we present wPA*SE in an equivalent but slightly different form from the original in \cite{asdf}. Algorithm \ref{alg:parastar} is a skeleton for wPA*SE. It begins by clearing the data structures and expanding out all edges coming from the start node.
 
-Intuitively, $OPEN$ represents the frontier of candidate states for expansion, initially containing only the direct successors of $s_{start}$. Once selected for expansion, a state moves from $OPEN$ to $CLOSED$. $BE$ represents the freshly $CLOSED$, i.e. the states which are still being expanded. Its cardinality $|BE|$ can never exceed the number of threads.
+Intuitively, $OPEN$ represents the frontier of states which are candidates for expansion, initially consisting of the direct successors of $s_{start}$. Once selected for expansion, a state moves from $OPEN$ to $CLOSED$. $BE$ represents the freshly $CLOSED$ states, i.e. those which are still in the process of being expanded. Its cardinality $|BE|$ will never exceed the number of threads.
 
 \begin{algorithm}
 \caption{main()}
@@ -92,18 +94,6 @@ Intuitively, $OPEN$ represents the frontier of candidate states for expansion, i
 \end{algorithmic}
 \end{algorithm}
 
-Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $BE$ are represented by balanced binary trees sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
-
-Each thread begins by attempting to extract an element $s\in OPEN$ which is \textbf{safe for expansion}. A state is considered safe if its current distance label $g(s)$ is known to be a good enough approximation of the true distance; that is, $g(s) \le \epsilon c^*(s_{start},s)$. This condition is crucial since wPA*SE expands each node at most once. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
-
-The assignable variables $v(s)$ and data structure $FROZEN$ are never used, and exist only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded.
-
-There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it should satisfy $bound(s) \le \epsilon c^*(s_{start},s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. In addition, to ensure progress, $bound(s)$ must be defined such that, at all times, the condition $g(s) \le bound(s)$ holds for some $s\in OPEN$. Our implementations guarantee this for the state with minimal $g(s)$. The wPA*SE implementation is listed in Algorithm \ref{alg:aux}.
-
-Intuitively, a state $s'\in OPEN\cup BE$ cannot possibly reduce $g(s)$ below $g(s') + h(s',s)$. It can be shown that if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. Provided $w \le \epsilon$, this means it suffices to check whether $g(s)$ may be dependent upon some $s'$ with $f(s') < f(s)$. Otherwise, $s$ is safe for expansion. See \cite{} for a proof that wPA*SE is $\max(w, \epsilon)$-optimal. In fact, it can be made $\epsilon$-optimal by checking all of $OPEN\cup BE$ instead of just the early elements. However, these checks can be expensive. The principal aim of our enhancements is to substantially reduce the number of checks needed.
-
-Atomic locks are used for concurrency; for conceptual clarity, the mechanism presented here is considerably simpler than our implementation. We will not go into detail here, but it bears mentioning that every use of the main data structures is guarded by one global lock. Finally, $bp$ stores back pointers which can be followed from $s$ back to $s_{start}$ to yield a path of cost at most $g(s)$.
-
 \begin{algorithm}
 \caption{expand($s$)}
 \label{alg:expand}
@@ -126,6 +116,22 @@ Atomic locks are used for concurrency; for conceptual clarity, the mechanism pre
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}
+
+Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $BE$ are represented by balanced binary trees sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
+
+Each thread begins by attempting to extract an element $s\in OPEN$ which is \textbf{safe for expansion}. A state is considered safe if its current distance label $g(s)$ is known to be a good enough approximation of the true distance; that is, $g(s) \le \epsilon g^*(s)$. This condition is crucial since wPA*SE expands each node at most once. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion. $bp$ stores back pointers which can be followed from any state $s$ back to $s_{start}$ to yield a path of costing at most $g(s)$.
+
+The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
+
+There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it must satisfy $bound(s) \le \epsilon g^*(s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion.
+
+Weighted A* always expands an $OPEN$ state with minimal $f(s)$, effectively requiring that $f(s')-f(s)\le 0$ where $s'$ is the first element (i.e. the one with minimal $f$-value) of $OPEN\cup BE$. This is effectively like setting $bound(s)$ to $g(s) + f(s') - f(s)$ . In order to generalize the safety criterion to allow parallel expansion, wPA*SE uses the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
+
+Correctness proofs appear in the analysis section. To explain the intuition behind $bound$, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s$ passing through some $s'\in OPEN\cup BE$. Thus, $g^*(s) = g^*(s') + h(s',s)$.   It can be shown that if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. For $s$ to be safe, it then suffices that $g(s) \le g(s') + \epsilon h(s', s)$ since the latter quantity is at most $\epsilon (g(s') + h(s',s)) \le \epsilon g^*(s)$.
+
+Provided $w \le \epsilon$, this inequality is guaranteed to hold when $f(s') \ge f(s)$. Hence, it suffices to check $s'$ such that $f(s') < f(s)$. See \cite{} for a proof that wPA*SE is $\max(w, \epsilon)$-optimal. In fact, it can be made $\epsilon$-optimal by checking all of $OPEN\cup BE$ instead of just the early elements. However, these checks can be expensive. Even in the former case, the cost of these checks for each state is at least proportional to the parallelism. The principal aim of our enhancements is to substantially reduce the number of checks needed while increasing parallelism.
+
+Atomic locks are used for concurrency; for conceptual clarity, the mechanism presented here is considerably simpler than our C++11 implementation. We will not discuss details here, but it bears mentioning that every use of the main data structures is guarded by the same global lock.
 
 \begin{algorithm}
 \caption{Auxiliary Functions}
@@ -155,7 +161,7 @@ We introduce the variables $g_p(s)$. Its semantics is similar to $bound(s)$ but 
 
 Here, $g_{bound}$ is the lower bound on $\epsilon c^*(s_{start},s)$ computed when $bound(s)$ was called in the state expansion process, or $0$ if $s=s_{start}$. The new $bound(s)$, listed in Algorithm \ref{alg:aux2}, makes use of a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about costs, but ePA*SE can make use of larger bounds if available.
 
-TODO: explain changes to $bound(s)$.
+TODO: explain changes to $bound(s)$.  Then prove completeness if finite branching factor, $w<\infty$ and $c_l > 0$
 
 \section{PARA*: Parallel Anytime Reparing A*}
 
