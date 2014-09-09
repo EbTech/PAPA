@@ -17,6 +17,7 @@
 \newtheorem{lemma}{Lemma}
 \newtheorem{thm}{Theorem}
 \newtheorem{cor}{Corollary}
+\newtheorem{rul}{Expansion Rule}
 % END Additional packages
 \frenchspacing
 \setlength{\pdfpagewidth}{8.5in}
@@ -49,6 +50,8 @@ PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE,
 Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which nodes are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality by a specified factor. Anytime Reparing A* (ARA*) is an anytime search algorithm, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows. With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) offers nearly linear speedup in the number of cores, provided the search is dominated by long expansion times.
 
 In this paper, we present Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both ARA* and PA*SE. Like ARA*, it gradually reduces the weight which biases toward the goal, resulting in incrementally better solutions. Like PA*SE, it often offers approximately linear speedup. However, our design and analysis is tighter than PA*SE, even in the non-anytime setting. This enables several theoretical results, as well as moderate performance gains over PA*SE in certain settings.
+
+Alternative selling point: our enhancements are two-fold. On one hand, we make algorithmic improvements which generalize the expansion rule, increasing parallelism while reducing the overhead for making use of said parallelism. On the other, we present a more detailed theoretical analysis, discussing the algorithm's properties in further detail.
 
 \section{Problem Formulation}
 
@@ -123,11 +126,19 @@ Each thread begins by attempting to extract an element $s\in OPEN$ which is \tex
 
 The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
 
-There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it must satisfy $bound(s) \le \epsilon g^*(s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion.
+There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it must satisfy $bound(s) \le \epsilon g^*(s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. We begin with a simple example.
 
-Weighted A* always expands an $OPEN$ state with minimal $f(s)$, effectively requiring that $f(s')-f(s)\le 0$ where $s'$ is the first element (i.e. the one with minimal $f$-value) of $OPEN\cup BE$. This is effectively like setting $bound(s)$ to $g(s) + f(s') - f(s)$ . In order to generalize the safety criterion to allow parallel expansion, wPA*SE uses the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
+\begin{rul}[wA* rule]
+A state $s\in OPEN$ is safe for expansion if its $f(s)$ value is minimal among states in $OPEN\cup BE$.
+\end{rul}
 
-Correctness proofs appear in the analysis section. To explain the intuition behind $bound$, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s$ passing through some $s'\in OPEN\cup BE$. Thus, $g^*(s) = g^*(s') + h(s',s)$.   It can be shown that, if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. For $s$ to be safe, it then suffices that $g(s) \le g(s') + \epsilon h(s', s)$ since the latter quantity is at most $\epsilon (g(s') + h(s',s)) \le \epsilon g^*(s)$.
+Weighted A* always expands an $OPEN$ state with minimal $f(s)$, effectively requiring that $f(s')-f(s)\le 0$ where $s'$ is the first element (i.e. the one with minimal $f$-value) of $OPEN\cup BE$. If we implement $bound(s)$ as $g(s) + f(s') - f(s)$, the rule can be rewritten as requiring $g(s) \le bound(s)$. The wA* rule already offers a small degree of parallelism, as several states with the same minimum $f$-value can be expanded simultaneously. In order to generalize the safety criterion to increase parallelism, wPA*SE generalizes this rule.
+
+\begin{rul}[wPA*SE rule]
+A state $s\in OPEN$ is safe for expansion if its $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
+\end{rul}
+
+To explain the intuition behind $bound$, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s$ passing through some $s'\in OPEN\cup BE$. Thus, $g^*(s) = g^*(s') + c^*(s',s) \ge g^*(s') + h(s',s)$.   It can be shown that, if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. For $s$ to be safe, it then suffices that $g(s) \le g(s') + \epsilon h(s', s)$ since the latter quantity is at most $\epsilon (g(s') + h(s',s)) \le \epsilon g^*(s)$.
 
 Provided $w \le \epsilon$, this inequality is guaranteed to hold when $f(s') \ge f(s)$. Hence, it suffices to check $s'$ for which $f(s') < f(s)$. See \cite{} for a proof that wPA*SE is $\max(w, \epsilon)$-optimal. In fact, it can be made $\epsilon$-optimal by checking all of $OPEN\cup BE$ instead of just the early elements. However, these checks can be expensive. Even in the former case, the cost of these checks for each state is at least proportional to the parallelism. The principal aim of our enhancements is to substantially reduce the number of checks needed while increasing parallelism.
 
@@ -156,10 +167,14 @@ Atomic locks are used for concurrency; for conceptual clarity, the mechanism pre
 
 \section{Improvements toward ePA*SE}
 
-We introduce the variables $g_p(s)$. Their semantics are similar to $bound(s)$ but somewhat more intricate. $g_p(s)/\epsilon$ is a lower bound on the cost from $s_{start}$ to $s$, restricting ourselves to paths in which $s$ is immediately preceded by an expanded node. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, we initialize $g_p(s)$ to $\infty$ just as we did for $g(s)$ and $v(s)$, and then add the following line immediately before the second \textbf{if} statement in expand($s$):
+We introduce the variables $g_p(s)$. Their semantics are similar to $bound(s)$ but somewhat more intricate. While $bound(s)/\epsilon$ is a lower bound on $c^*(s_{start},s)$, $g_p(s)/\epsilon$ is a lower bound on the cost from $s_{start}$ to $s$, restricting ourselves to paths in which $s$ is immediately preceded by an expanded node. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, we initialize $g_p(s)$ to $\infty$ just as we did for $g(s)$ and $v(s)$, and then add the following line immediately before the second \textbf{if} statement in expand($s$):
 \[g_p(s') := \min(g_p(s'),\; g_{bound} + \epsilon c(s,s'))\]
 
 Here, $g_{bound}$ is the lower bound on $\epsilon c^*(s_{start},s)$ computed when $bound(s)$ was called in the state expansion process, or $0$ if $s=s_{start}$. The enhanced version of $bound(s)$, listed in Algorithm \ref{alg:eaux}, makes use of a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about costs, but ePA*SE can make use of larger bounds if available.
+
+\begin{rul}[ePA*SE rule]
+A state $s\in OPEN$ is safe for expansion if its $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:eaux}.
+\end{rul}
 
 TODO: explain changes to $bound(s)$.  Then prove completeness if finite out-degree, $w<\infty$ and $c_l > 0$
 
@@ -227,7 +242,7 @@ Induction on time.
 
 \section{Analysis}
 
-In addition to making algorithmic enhancements, we present a deeper analysis than the PA*SE/wPA*SE paper. We begin by looking at the properties of $bound$ as listed in Algorithm \ref{alg:eaux}.
+In addition to making algorithmic enhancements, we present a deeper analysis than the wPA*SE paper \cite{}. We begin by looking at the properties of $bound$ from Algorithm \ref{alg:eaux}.
 
 \begin{lemma}
 \label{lem:indep}
@@ -325,7 +340,7 @@ If $w \le 1$, the parallel depth of Blind PARA* is bounded above by
 We prove the two bounds separately. For the first, note that if the lowest $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can simultaneously be expanded. Since $h$ is consistent, the successors' $f$-values is at least $f_{min} + (1-w)c_l$. Therefore, the depth is at most
 \[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\]
 
-For the other bound, write $t$ for $2\epsilon-w-1$. Notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + tc_l$ are always safe to expand. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iteration count is (TODO: fix this analysis)
+For the other bound, write $t$ for $2\epsilon-w-1$. Notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all nodes with $f$-value up to $f_{min} + tc_l$ are always safe for expansion. And during each iteration of the simultaneous expansions, the $g$-value of all such nodes increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every node in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iteration count is (TODO: fix this analysis)
 
 \begin{eqnarray*}
 &&t + 2t + 3t + ... + \epsilon g^*(s_{goal})/c_l
