@@ -41,23 +41,52 @@
 \maketitle
 \begin{abstract}
 \begin{quote}
-PARA* is an anytime parallel heuristic search algorithm based on ARA* and PA*SE, which are in turn based on A*.
+Recent advances in processor performance increasingly come in the form of additional processors as opposed to faster ones. In order for heuristic searches to take advantage of these architectures, we must adapt the algorithms for parallel processing.
+wPA*SE (weighted Parallel A* for Slow Expansions) is a recent parallel variant of A*, which guarantees a solution costing within a specified factor of optimal, while expanding each state at most once. wPA*SE can achieve a nearly linear speedup in the number of processor cores if expansions are sufficiently time-consuming to dominate the search runtime.
+Much of the overhead of wPA*SE is due to the careful selection of the next state to expand, which is needed to maintain the theoretical properties.
+In this work, we present Enhanced PA*SE (ePA*SE), which maintains speedups when expansions are faster than wPA*SE allows. ePA*SE reduces the overhead of wPA*SE in selecting states for expansion by maintaining tighter bounds on the suboptimality of each individual state.
+We show comparable performance to wPA*SE when expansions are slow, and better performance as the number of cores increases and expansions become faster. On the theoretical side, ePA*SE provides the same guarantees on completeness and solution quality as wPA*SE. We also show how it generalizes single-source shortest paths, providing performance bounds in the massively parallel limit. Finally, we present PARA*, an anytime variant of ePA*SE.
 \end{quote}
 \end{abstract}
 
 \section{Introduction}
 
-Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which nodes are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality by a specified factor. Anytime Reparing A* (ARA*) is an anytime search algorithm, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows. With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) offers nearly linear speedup in the number of cores, provided the search is dominated by long expansion times.
+Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which nodes are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality by a specified factor. With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) and its weighted variant wPA*SE offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions.
 
-In this paper, we present Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both ARA* and PA*SE. Like ARA*, it gradually reduces the weight which biases toward the goal, resulting in incrementally better solutions. Like PA*SE, it often offers approximately linear speedup. However, our design and analysis is tighter than PA*SE, even in the non-anytime setting. This enables several theoretical results, as well as moderate performance gains over PA*SE in certain settings.
+In this paper, we present Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. These improvements are achieved by tightening the analysis of wPA*SE. This enables several theoretical results, which we also present.
+
+Finally, we present  Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both Anytime Repairing A* (ARA*) and wPA*SE. ARA* and PARA* are anytime search algorithms, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows.
 
 Alternative selling point: our enhancements are two-fold. On one hand, we make algorithmic improvements which generalize the expansion rule, increasing parallelism while reducing the overhead for making use of said parallelism. On the other, we present a more detailed theoretical analysis, discussing the algorithm's properties in further detail.
 
 \section{Problem Formulation}
 
-We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$. We abbreviate $c^*(s_{start}, s)$ by $g^*(s)$.
+We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$. Subject to this bounded optimality guarantee, we want to plan as quickly as possible.
 
 We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
+
+\section{An alternate view of of wA*}
+
+Many A* variants work by maintaining a set of estimates $g(s)$ bounding the optimal cost $g^*(s) = c^*(s_{start},s)$ of reaching $s$ from $s_{start}$. The estimates are constructive: every state $s$ in the search tree has a back-pointers $bp(s)$, and these can be followed back from $s$ to $s_{start}$ to yield a path of costing at most $g(s)$.
+
+In hopes of avoiding duplicate effort, the A* variants we consider are designed to expand each node at most once. Thus, before expanding $s$, it's important to verify that we already have a near-optimal path from $s_{start}$ to $s$. Formally, we say a state $s$ is \textbf{safe for expansion} once we have deduced that $g(s) \le \epsilon g^*(s)$.
+
+wA* sorts the frontier by the numeric keys $f(s) = g(s) + wh(s)$ where $w = \epsilon$. Let $bound(s)$ be defined by $g(s) + f(s') - f(s)$ where $s'$ is the first open state of the frontier, i.e. one with minimal $f$-value. Then
+\begin{eqnarray*}
+bound(s) &=& g(s) + \min_{s'}(f(s')) - f(s)
+\\&=& \min_{s'}(g(s) + f(s') - f(s))
+\\&=& \min_{s'}(g(s') + \epsilon(h(s',s_{goal}) - h(s,s_{goal}))) 
+\\&\le& \min_{s'}(g(s') + \epsilon h(s',s))
+\\&\le& \epsilon g^*(s')
+\end{eqnarray*}
+
+Therefore, a state $s$ can be considered safe for expansion if $g(s) \le bound(s)$, which of course reduces to $0 \le f(s') - f(s)$. In other words, $s$ must have the minimal $f$-value of the frontier. This can be stated as a principle:
+
+\begin{rul}[wA* rule]
+A state $s\in OPEN$ is safe for expansion if its $f$-value is minimal among states in the frontier.
+\end{rul}
+
+Already, this grants a trivial degree of parallelism: if multiple states have the same minimal $f$-value, they can be expanded simultaneously. The main contribution of wPA*SE is to generalize this principle, allowing more states to be simultaneously safe for expansion.
 
 \section{Review of wPA*SE}
 
@@ -122,15 +151,11 @@ Intuitively, $OPEN$ represents the frontier of states which are candidates for e
 
 Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $BE$ are represented by balanced binary trees sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
 
-Each thread begins by attempting to extract an element $s\in OPEN$ which is \textbf{safe for expansion}. A state is considered safe if its current distance label $g(s)$ is known to be a good enough approximation of the true distance; that is, $g(s) \le \epsilon g^*(s)$. This condition is crucial since wPA*SE expands each node at most once. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion. $bp$ stores back pointers which can be followed from any state $s$ back to $s_{start}$ to yield a path of costing at most $g(s)$.
+Each thread begins by attempting to extract an element $s\in OPEN$ which is safe for expansion.Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
 
 The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
 
-There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it must satisfy $bound(s) \le \epsilon g^*(s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. We begin with a simple example.
-
-\begin{rul}[wA* rule]
-A state $s\in OPEN$ is safe for expansion if its $f(s)$ value is minimal among states in $OPEN\cup BE$.
-\end{rul}
+There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it must satisfy $bound(s) \le \epsilon g^*(s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. We begin with a simple example
 
 Weighted A* always expands an $OPEN$ state with minimal $f(s)$, effectively requiring that $f(s')-f(s)\le 0$ where $s'$ is the first element (i.e. the one with minimal $f$-value) of $OPEN\cup BE$. If we implement $bound(s)$ as $g(s) + f(s') - f(s)$, the rule can be rewritten as requiring $g(s) \le bound(s)$. The wA* rule already offers a small degree of parallelism, as several states with the same minimum $f$-value can be expanded simultaneously. In order to generalize the safety criterion to increase parallelism, wPA*SE generalizes this rule.
 
