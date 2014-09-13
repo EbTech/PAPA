@@ -90,9 +90,9 @@ Already, this grants a trivial degree of parallelism: if multiple states have th
 
 \section{Review of wPA*SE}
 
-In order to clarify the role of the enhancements we will make, we present wPA*SE in an equivalent but slightly different form from the original in \cite{asdf}. Algorithm \ref{alg:parastar} is a skeleton for wPA*SE. It begins by clearing the data structures and expanding out all edges coming from the start node.
+Before describing how wPA*SE generalizes the wA* rule for safe expansion, let's outline the entire search algorithm in more detail. Our presentation of wPA*SE differs slightly from the original version in \cite{asdf}, but the algorithm we describe is essentially equivalent. Algorithm \ref{alg:parastar} is a skeleton for wPA*SE. It begins by clearing the data structures and expanding out all edges coming from the start node.
 
-Intuitively, $OPEN$ represents the frontier of states which are candidates for expansion, initially consisting of the direct successors of $s_{start}$. Once selected for expansion, a state moves from $OPEN$ to $CLOSED$. $BE$ represents the freshly $CLOSED$ states, i.e. those which are still in the process of being expanded. Its cardinality $|BE|$ will never exceed the number of threads.
+Intuitively, $OPEN$ represents the frontier of states which are candidates for expansion, initially consisting of the direct successors of $s_{start}$. Once a safe state is identified and selected for expansion, it's removed from $OPEN$ and inserted into $BE$ and $CLOSED$. $BE$ represents the freshly $CLOSED$ states, i.e. those which are still in the process of being expanded. Its cardinality $|BE|$ will never exceed the number of threads.
 
 \begin{algorithm}
 \caption{main()}
@@ -149,25 +149,25 @@ Intuitively, $OPEN$ represents the frontier of states which are candidates for e
 \end{algorithmic}
 \end{algorithm}
 
-Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $BE$ are represented by balanced binary trees sorted by $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but alternatives are discussed later.
+Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $BE$ are represented by balanced binary trees sorted by key values $f(s) = g(s) + wh(s,s_{goal})$ for some parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but possible motivations to select alternatives are discussed later.
 
-Each thread begins by attempting to extract an element $s\in OPEN$ which is safe for expansion.Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
+Each thread begins by attempting to identify and extract an element $s\in OPEN$ which is safe for expansion. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
 
-The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
+The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of $CLOSED$ nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
 
-There are many ways to define the auxiliary function $bound(s)$; as we will see, this contributes one of the major differences between wPA*SE and ePA*SE. In either case, it must satisfy $bound(s) \le \epsilon g^*(s)$, so that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion. We begin with a simple example
-
-Weighted A* always expands an $OPEN$ state with minimal $f(s)$, effectively requiring that $f(s')-f(s)\le 0$ where $s'$ is the first element (i.e. the one with minimal $f$-value) of $OPEN\cup BE$. If we implement $bound(s)$ as $g(s) + f(s') - f(s)$, the rule can be rewritten as requiring $g(s) \le bound(s)$. The wA* rule already offers a small degree of parallelism, as several states with the same minimum $f$-value can be expanded simultaneously. In order to generalize the safety criterion to increase parallelism, wPA*SE generalizes this rule.
+There are many ways to implement the auxiliary function $bound(s)$; as discussed in the previous section, we obtain a trivially parallelized version of wA* by using $bound(s) = g(s) + f(s') - f(s)$ for the minimizing $s'\in OPEN \cup BE$. Provided our implementation satisfies $bound(s) \le \epsilon g^*(s)$, the same argument applies to show that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion.
 
 \begin{rul}[wPA*SE rule]
 A state $s\in OPEN$ is safe for expansion if its $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
 \end{rul}
 
-To explain the intuition behind $bound$, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s$ passing through some $s'\in OPEN\cup BE$. Thus, $g^*(s) = g^*(s') + c^*(s',s) \ge g^*(s') + h(s',s)$.   It can be shown that, if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. For $s$ to be safe, it then suffices that $g(s) \le g(s') + \epsilon h(s', s)$ since the latter quantity is at most $\epsilon (g(s') + h(s',s)) \le \epsilon g^*(s)$.
+To sketch the intuition behind the wPA*SE implementation of $bound$, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s$ passing through some $s'\in OPEN\cup BE$. Thus,
+\[g^*(s) = g^*(s') + c^*(s',s) \ge g^*(s') + h(s',s).\]
+It can be shown that, if some $s'$ makes $s$ unsafe, then there is such an $s'$ whose $g$-value is $\epsilon$-optimal. For $s$ to be safe, it then suffices that $g(s) \le g(s') + \epsilon h(s', s)$ since the latter quantity is at most $\epsilon (g^*(s') + h(s',s)) \le \epsilon g^*(s)$.
 
-Provided $w \le \epsilon$, this inequality is guaranteed to hold when $f(s') \ge f(s)$. Hence, it suffices to check $s'$ for which $f(s') < f(s)$. See \cite{} for a proof that wPA*SE is $\max(w, \epsilon)$-optimal. In fact, it can be made $\epsilon$-optimal by checking all of $OPEN\cup BE$ instead of just the early elements. However, these checks can be expensive. Even in the former case, the cost of these checks for each state is at least proportional to the parallelism. The principal aim of our enhancements is to substantially reduce the number of checks needed while increasing parallelism.
+Assuming $w \le \epsilon$, this inequality is guaranteed to hold whenever $f(s') \ge f(s)$. Hence, it suffices to check $s'$ for which $f(s') < f(s)$. See \cite{} for a proof that wPA*SE is $\max(w, \epsilon)$-optimal. In fact, it can be made $\epsilon$-optimal, but when $w > \epsilon$ that requires checking  all $s'\in OPEN\cup BE$ instead of just those with smaller $f$-value than $s$. Even in the former case, these checks are expensive, their cost per state being at least proportional to the parallelism. The principal aim of our enhancements is to substantially reduce the number of checks needed while increasing parallelism.
 
-Atomic locks are used for concurrency; for conceptual clarity, the mechanism presented here is considerably simpler than our C++11 implementation. We will not discuss details here, but it bears mentioning that every use of the main data structures is guarded by the same global lock.
+Before continuing, we briefly note that atomic locks are used for concurrency. For conceptual clarity, the mechanism presented here is considerably simpler than our C++ implementation. We will not discuss details here, but it bears mentioning that every use of the main data structures is guarded by the same global lock.
 
 \begin{algorithm}
 \caption{Auxiliary Functions}
