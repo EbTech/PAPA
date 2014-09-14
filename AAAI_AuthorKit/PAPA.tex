@@ -75,7 +75,7 @@ In hopes of avoiding duplicate effort, the A* variants we consider are designed 
 
 wA* sorts the frontier by the numeric keys $f(s) = g(s) + wh(s)$ where $w = \epsilon$. Let $bound(s)$ be defined by $g(s) + f(s') - f(s)$ where $s'$ is the first open state of the frontier, i.e. one with minimal $f$-value. Then
 \begin{eqnarray*}
-bound(s) &=& g(s) + \min_{s'}(f(s')) - f(s)
+bound(s) &=& g(s) + \min_{s'}f(s') - f(s)
 \\&=& \min_{s'}(g(s) + f(s') - f(s))
 \\&=& \min_{s'}(g(s') + \epsilon(h(s',s_{goal}) - h(s,s_{goal}))) 
 \\&\le& \min_{s'}(g(s') + \epsilon h(s',s))
@@ -155,7 +155,7 @@ Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. $OPEN$ and $
 
 Each thread begins by attempting to identify and extract an element $s\in OPEN$ which is safe for expansion. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
 
-The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of $CLOSED$ nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
+The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of $CLOSED$ nodes for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup BE\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
 
 There are many ways to implement the auxiliary function $bound(s)$; as discussed in the previous section, we obtain a trivially parallelized version of wA* by using $bound(s) = g(s) + f(s') - f(s)$ for the minimizing $s'\in OPEN \cup BE$. Provided our implementation satisfies $bound(s) \le \epsilon g^*(s)$, the same argument applies to show that the condition $g(s) \le bound(s)$ suffices to ensure $s$ is safe for expansion.
 
@@ -196,7 +196,7 @@ Before continuing, we briefly note that atomic locks are used for concurrency. F
 
 Having conveniently rephrased wPA*SE for our purposes, we are now prepared to enhance the algorithm.
 
-We introduce the assignable variables $g_p(s)$. Their semantics are similar to $bound(s)$ but somewhat more intricate. While $bound(s)/\epsilon$ is a lower bound on the unrestricted distance $g^*(s)$, $g_p(s)/\epsilon$ is a lower bound on the cost from $s_{start}$ to $s$, restricting ourselves to paths in which $s$ is immediately preceded by an expanded node. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, we initialize $g_p(s)$ to $\infty$ just as Algorithm \ref{alg:expand} did for $g(s)$ and $v(s)$, and then add the following line immediately before the second \textbf{if} statement in expand($s$):
+We introduce the assignable variables $g_p(s)$. Their semantics are similar to $bound(s)$ but somewhat more intricate. While $bound(s)/\epsilon$ is a lower bound on the unrestricted distance $g^*(s)$, $g_p(s)/\epsilon$ is a lower bound on the cost from $s_{start}$ to $s$, restricting ourselves to paths in which $s$ is immediately preceded by an expanded node. That is, $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, we initialize $g_p(s)$ to $\infty$ just as Algorithm \ref{alg:expand} did for $g(s)$ and $v(s)$, and then make the following assignment immediately before the second \textbf{if} statement of expand($s$):
 \[g_p(s') := \min(g_p(s'),\; b + \epsilon c(s,s'))\]
 
 Here, $b$ is the lower bound on $\epsilon g^*(s)$ computed by the $bound(s)$ call when $s$ was extracted, or $0$ if $s=s_{start}$. Note that at all times, $g(s) < \infty \Rightarrow g(s) < g_p(s)$.
@@ -207,32 +207,8 @@ The performance gains of ePA*SE come from changing the implementation of $bound(
 A state $s\in OPEN$ is safe for expansion if its $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:eaux}.
 \end{rul}
 
-Recall that wPA*SE upper-bounds $\epsilon g^*(s)$ by the minimum of $g(s') + \epsilon h(s',s)$ for $s'\in OPEN\cup BE$. Hoever, not every element of $OPEN\cup BE$ needs to be considered separately. Indeed, suppose we choose an arbitrary subset $V\subseteq OPEN\cup BE$ over which we explicitly minimize $g(s') + \epsilon h(s',s)$. As we saw when discussing wA*, $g(s) + f(s') - f(s) \le g(s') + \epsilon h(s',s)$. Thus, if we let $\bar V = (OPEN\cup BE)\setminus V$, a valid implementation of $bound(s)$ produces 
-\[\min\left(\min_{s'\in V}\left(g(s') + \epsilon h(s',s)\right),\;g(s) + \min_{s'\in\bar V} f(s') - f(s)  \right).\]
-
-wA* can be seen as the instance of this general definition with $V = \emptyset$. Since $OPEN$ and $BE$ are sorted, a minimizing element of $\bar V$ is easily found. In PA*SE, $V$ consists of the states $s'$ such that $f(s') < f(s)$. The term corresponding to $\bar V$ is trivially minimized by $s$, yielding the value $g(s)$. Nonetheless, the term corresponding to $V$ can take substantial effort to compute. Much of this effort can be removed by decreasing the size of $V$.
-
-Before doing so, we note a few optimizations which will be justified in the formal analysis. Firstly, we can replace $g$ by $g_p$ in the term $g(s') + \epsilon h(s',s)$. Since $g_p(s) > g(s)$, this can only make the condition $g(s) \le bound(s)$ more likely to hold, thus increasing parallelism. Likewise, if $c_l > 0$, the $\bar V$ term can be improved using Lemma \ref{lem:indep}.
-
-It remains only to define $V$. Larger $V$ tightens (i.e. increases) the value of $bound(s)$, but increases the computational expense. In ePA*SE, we begin with $V = \emptyset$ and iteratively add elements from $OPEN\cup BE$ beginning with the smallest $f$-values. We continue this until we have determined with certainty whether or not $\min_{s'\in V}\left(g_p(s') + \epsilon h(s',s)\right)$ (i.e. the value we would obtain if we let $V = OPEN\cup BE$) is greater than $g(s)$. That is, we do the minimum possible work while ensuring the result of the check $g(s) \le bound(s)$ matches what would be obtained in the case where $V$ is the whole frontier.
-
-$g_{front}$ is the bound computed from $V$, while $g_{back}$ is computed from $\bar V$. The former decreases and the latter increases monotonically as states $s'$ are added to $V$. The first termination condition $g_{back} \ge g(s)$ corresponds to a point after which the result of the comparison $g(s) \le bound(s)$ cannot change by growing $V$, because $g_{back} \ge g(s)$ would continue to hold thereafter and Lemma \ref{lem:indep} forbids any future elements moving from $\bar V$ to $V$ from changing the result. This is guaranteed to hold for $s' = s$, ensuring that $V$ never takes elements which would not have been considered by wPA*SE. Similarly, the second termination condition $g(s) > g_{front}$ corresponds to a guarantee that $g(s) \le bound(s)$ can never hold no matter how $V$ is defined.
-
-In summary, the ePA*SE implementation yeilds a sharper comparison than wPA*SE while doing explicit checks against no more, and often many fewer, states of the frontier. For instance, all states whose $f$-values are within $(2\epsilon-w-1)c_l$ of the minimum can be expanded in parallel, as can any set of states which wPA*SE considers safe for expansion.
-
-TODO: Prove completeness if finite out-degree, $w<\infty$ and $c_l > 0$
-
-\subsection{PARA*: Parallel Anytime Reparing A*}
-
-Finally, we note that by analogy with ARA*, ePA*SE can be made into an anytime algorithm, iteratively computing solutions with progressively smaller suboptimality bounds. We can modify Algorithm \ref{alg:main} so that, instead of calling the parallel search() only once, search() is called in a loop which terminates only when the agent decides it's no longer worthwhile to spend additional planning time to improve the solution. Between iterations, the thaw() procedure in Algorithm \ref{alg:eaux} must be called to place the $FROZEN$ states back into the $OPEN$ list, since any state with $g(s) < v(s)$ can potentially be expanded to improve other $g$-values.
-
-The inequality $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$, which defines $g_p$, must hold for every $s'$ which was ever expanded (hence $CLOSED$), including during prior anytime iterations. Hence, the $g_p$ values must be reset when $\epsilon$ decreases. thaw() already does this for the $OPEN$ list. When another state is seen for the first time in the present iteration (or equivalently, expand() encounters an $s'\notin OPEN\cup CLOSED$), it performs the reset operation
-\[g_p(s') := g(s') + 2(\epsilon-1)c_l\]
-
-This is a generalization of the $g_p(s') := \infty$ step from the non-anytime version.
-
 \begin{algorithm}
-\caption{Auxiliary Functions ePA*SE}
+\caption{$bound(s)$ in ePA*SE and PARA*}
 \label{alg:eaux}
 \begin{algorithmic}
 \STATE \textbf{FUNCTION} $g_{back}(s',s)$
@@ -243,7 +219,6 @@ This is a generalization of the $g_p(s') := \infty$ step from the non-anytime ve
 \ELSE
 \RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
 \ENDIF
-
 \STATE \textbf{FUNCTION} $bound(s)$
 \STATE $g_{front} := g_p(s)$
 \STATE $s' :=$ first node in $OPEN \cup BE$
@@ -252,8 +227,34 @@ This is a generalization of the $g_p(s') := \infty$ step from the non-anytime ve
 \STATE $s' :=$ node following $s'$ in $OPEN \cup BE$
 \ENDWHILE
 \RETURN $\min(g_{front},\;g_{back}(s',s))$
+\end{algorithmic}
+\end{algorithm}
 
-\STATE \textbf{PROCEDURE} $thaw()$
+Recall that wPA*SE upper-bounds $\epsilon g^*(s)$ by the minimum of $g(s') + \epsilon h(s',s)$ for $s'\in OPEN\cup BE$. Hoever, not every element of $OPEN\cup BE$ needs to be considered separately. Indeed, suppose we choose an arbitrary subset $V\subseteq OPEN\cup BE$ over which we explicitly minimize $g(s') + \epsilon h(s',s)$. As we saw when discussing wA*, $g(s) + f(s') - f(s) \le g(s') + \epsilon h(s',s)$. Thus, if we let $\bar V = (OPEN\cup BE)\setminus V$, a valid implementation of $bound(s)$ produces 
+\[\min\left(\min_{s'\in V}\left(g(s') + \epsilon h(s',s)\right),\;g(s) + \min_{s'\in\bar V} f(s') - f(s)  \right).\]
+
+wA* can be seen as the instance of this general definition with $V = \emptyset$. Since $OPEN$ and $BE$ are sorted, a minimizing element of $\bar V$ is easily found. In PA*SE, $V$ consists of the states $s'$ such that $f(s') < f(s)$. The term corresponding to $\bar V$ is trivially minimized by $s$, yielding the value $g(s)$. Nonetheless, the term corresponding to $V$ can take substantial effort to compute. Much of this effort can be removed by decreasing the size of $V$.
+
+Before doing so, we note a few optimizations which will be justified in the formal analysis. Firstly, we can replace $g$ by $g_p$ in the term $g(s') + \epsilon h(s',s)$. Since $g_p(s) > g(s)$, this can only make the condition $g(s) \le bound(s)$ more likely to hold, thus increasing parallelism. Likewise, if $c_l > 0$, the $\bar V$ term can be improved using Lemma \ref{lem:indep}.
+
+It remains only to define $V$. Larger $V$ tightens (i.e. increases) the value of $bound(s)$, but increases the computational expense. In ePA*SE, we begin with $V = \{s\}$ and iteratively add elements from $OPEN\cup BE$ in increasing order starting at the minimum $f$-value. We continue this until we have determined with certainty whether or not $\min_{s'\in V}\left(g_p(s') + \epsilon h(s',s)\right)$ (i.e. the value we would obtain if we let $V = OPEN\cup BE$) is greater than $g(s)$. That is, we do the minimum possible work while ensuring the result of the check $g(s) \le bound(s)$ matches what would be obtained in the case where $V$ is the whole frontier.
+
+$g_{front}$ is the bound computed from $V$, while $g_{back}$ is computed from $\bar V$. The former decreases and the latter increases monotonically as states $s'$ are added to $V$. The first termination condition $g_{back} \ge g(s)$ corresponds to a point after which the result of the comparison $g(s) \le bound(s)$ cannot change by growing $V$, because $g_{back} \ge g(s)$ would continue to hold thereafter and Lemma \ref{lem:indep} forbids any future elements moving from $\bar V$ to $V$ from changing the result. This is guaranteed to hold for $s' = s$, ensuring that $V$ never takes elements which would not have been considered by wPA*SE, aside from $s$. Similarly, the second termination condition $g(s) > g_{front}$ corresponds to a guarantee that $g(s) \le bound(s)$ can never hold no matter how $V$ is defined.
+
+Note that the nested \textbf{if} statements in the pseudocode of $g_{back}$ can be optimized away since we usually know in advance of the search whether $w \le \epsilon$, and the $s' = NULL$ case can be handled by placing a null element with $f = \infty$ at the end of $OPEN$ and $BE$. Such an element will always trigger the $g_{back} \ge g(s)$ termination condition, ensuring that we don't iterate past the end of $OPEN\cup BE$.
+
+In summary, the ePA*SE implementation yeilds a sharper comparison than wPA*SE while doing explicit checks against no more, and often many fewer, states of the frontier. For instance, all states whose $f$-values are within $(2\epsilon-w-1)c_l$ of the minimum can be expanded in parallel, as can any set of states which wPA*SE considers safe for expansion.
+
+TODO: Prove completeness if finite out-degree, $w<\infty$ and $c_l > 0$
+
+\subsection{PARA*: Parallel Anytime Reparing A*}
+
+Finally, we note that by analogy with ARA*, ePA*SE can be made into an anytime algorithm, iteratively computing solutions with progressively smaller suboptimality bounds. We can modify Algorithm \ref{alg:main} so that, instead of calling the parallel search() only once, search() is called in a loop which terminates only when the agent decides it's no longer worthwhile to spend additional planning time to improve the solution. Between iterations, the $thaw()$ procedure in Algorithm \ref{alg:thaw} must be called to place the $FROZEN$ states back into the $OPEN$ list, since any state with $g(s) < v(s)$ can potentially be expanded to improve other $g$-values.
+
+\begin{algorithm}
+\caption{$thaw(s)$}
+\label{alg:thaw}
+\begin{algorithmic}
 \STATE choose new $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
 \STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
@@ -263,7 +264,12 @@ This is a generalization of the $g_p(s') := \infty$ step from the non-anytime ve
 \end{algorithmic}
 \end{algorithm}
 
-The following lemma lists some easily checked invariants of wPA*SE, ePA*SE and PARA*.
+The inequality $g_p(s) \le \epsilon (c^*(s_{start},s') + c(s',s))$, which defines $g_p$, must hold for every $s'$ which was ever expanded (hence $CLOSED$), including during prior anytime iterations. Hence, the $g_p$ values must be reset when $\epsilon$ decreases. thaw() already does this for the $OPEN$ list. When a state $s'$ is seen for the first time since the most recent call to $thaw()$, $expand()$ performs the reset operation
+\[g_p(s') := g(s') + 2(\epsilon-1)c_l\]
+
+This generalizes and replaces the initialization step $g_p(s') := \infty$ from ePA*SE. Indeed, since all $g$-values are initialized to $\infty$, the $g_p$ values are also initialized the first time around to $\infty +2(\epsilon-1)c_l = \infty$. Since $g$, $v$ and $g_p$ are always initialized before use, we will consider the unseen nodes as implicitly initialized for the purposes of analysis.
+
+The following lemma lists some easily checked invariants of ePA*SE and PARA*.
 
 \begin{lemma}
 \label{lem:prop}
@@ -271,12 +277,12 @@ At all times, the following invariants hold:
 \begin{itemize}
 \item $OPEN\cap CLOSED = \emptyset$
 \item $BE\cup FROZEN \subseteq CLOSED$
+\item If $g(s)<\infty$, $bp(\cdot)$ can be followed from $s$ back to $s_{start}$ to yield a path from $s_{start}$ to $s$ costing at most $g(s)$
+\item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
 \item $s\in OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) < v(s)$
 \item $s\notin OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) = v(s)$
-\item $g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\{v(s') + c(s',s)\}$
-\item Following $bp(\cdot)$ from $s$ yields a path costing at most $g(s)$
-\item $s\in OPEN\cup CLOSED \Rightarrow g(s) + (\epsilon-1)c_l \le g_p(s) \le \epsilon g(s)$
-\item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime during the current main() loop iteration
+\item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime since the most recent call to $thaw()$
+\item $s\ne s_{start} \Rightarrow\\g(s) + (\epsilon-1)c_l \le g_p(s) \le min_{s'}\{v(s') + \epsilon c(s',s)\}$
 \end{itemize}
 \end{lemma}
 
@@ -284,9 +290,11 @@ At all times, the following invariants hold:
 Induction on time.
 \end{proof}
 
+The fourth point is a relaxation of $g(s) = min_{s'}\{v(s') + c(s',s)\}$, an invariant often seen in sequential A* variants such as ARA*. Our relaxation allows more parallel variable assignments, such as modifying the $g$-value of a state which is undergoing expansion.
+
 \section{Analysis}
 
-In addition to making algorithmic enhancements, we present a deeper analysis than the wPA*SE paper \cite{}. We begin by looking at the properties of $bound$ from Algorithm \ref{alg:eaux}.
+We investigate ePA*SE/PARA* starting at the core: the $bound$ function of Algorithm \ref{alg:eaux}.
 
 \begin{lemma}
 \label{lem:indep}
@@ -304,6 +312,8 @@ If $w \le \epsilon$, then
 \\&=& g(s') + (\epsilon-1)c_l + \epsilon h(s',s)
 \\&\le& g_p(s') + \epsilon h(s',s)
 \end{eqnarray*}
+where the last two inequalities follow by WLOG having $h(s,s') \ge c_l$ and Lemma \ref{lem:prop}.
+
 On the other hand, if $w > \epsilon$, then
 \begin{eqnarray*}
 &&\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l
@@ -316,14 +326,18 @@ On the other hand, if $w > \epsilon$, then
 
 \begin{lemma}
 \label{lem:bound}
-For all $s\in OPEN\cup BE$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$.
+For every state $s$, $bound(s) \le \min_{s'\in OPEN \cup BE} g_p(s') + \epsilon h(s',s)$. Furthermore, $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} \left( g_p(s') + \epsilon h(s',s) \right)$.
 \end{lemma}
 
 \begin{proof}
-By construction, $bound(s)$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for $s'=s$ as well as for the other states $s'$ which are checked in the loop. As for the remaining states $s' \in OPEN \cup BE$, the algorithm ensures that $bound(s) \le g_{back}(s',s)$ for these by using a minimum representative. By Lemma \ref{lem:indep}, it follows that
+By construction, $g_{front}$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for all $s'\in V$, where $V$ consists of $s$ and the states considered by the loop in $bound(s)$. Meanwhile, Lemma \ref{lem:indep} ensures that $g_{back}$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for all $s'\in \bar V$, where $\bar V = (OPEN \cup BE) \setminus V$. Therefore,
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s).\]
+To prove the second claim, note that the loop in $bound(s)$ terminates under one of two conditions.
 
-To prove the second claim, note that the loop in $bound(s)$ terminates under only two conditions. Either $g(s) > g_{front}$, in which case we have $g(s) > g_p(s') + \epsilon h(s',s) \ge bound(s)$ for the $s'$ which began the final iteration; or $g(s) \le g_{back}(s',s)$, in which case $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le g_p(s') + \epsilon h(s',s)$ for all $s' \in OPEN \cup BE$.
+If the loop terminates because $g(s) \le g_{back}$, then by Lemma \ref{lem:indep}, $g(s) \le g_{back} \le \min_{s'\in \bar V} \left( g_p(s') + \epsilon h(s',s) \right)$. Since $g_{front} = \min_{s'\in V} \left( g_p(s') + \epsilon h(s',s) \right)$, it follows that $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} \left( g_p(s') + \epsilon h(s',s) \right)$.
+
+On the other hand, if the loop terminates because $g(s) > g_{front}$, then the final assignment to $g_{front}$ must correspond to a state $s'$ for which
+\[g(s) > g_p(s') + \epsilon h(s',s) = g_{front} \ge bound(s).\]
 \end{proof}
 
 \begin{thm}
@@ -334,18 +348,20 @@ For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in
 \begin{proof}
 We proceed by induction on the order in which states are expanded.
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. If $i = 1$, then
-\[g_p(s_i) \le \epsilon g(s_i) = \epsilon g^*(s_i)\]
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. If $i = 1$, then since $s_0 = s_{start}$ was already expanded,
+\[g_p(s_1) \le \epsilon c(s_0,s_1) = \epsilon g^*(s_1).\]
 If $i \ge 2$, there are two cases to consider, depending on whether $s_{i-1}\in CLOSED$.
 
-If so, then $expand(s_{i-1})$ has assigned to $g_p(s_i)$. Hence by the induction hypothesis,
+If so, the induction hypothesis implies $v(s_{i-1}) \le \epsilon g^*(s_{i-1})$. Hence by Lemma \ref{lem:prop},
 \begin{eqnarray*}
 g_p(s_i) &\le& v(s_{i-1}) + \epsilon c(s_{i-1},s_i)
 \\&\le& \epsilon g^*(s_{i-1}) + \epsilon c(s_{i-1},s_i)
 \\&=& \epsilon g^*(s_i)
 \end{eqnarray*}
 
-On the other hand, suppose $s_{i-1}\notin CLOSED$. Choose the maximum $j<i$ such that $s_j\in CLOSED$, or $j=0$ if there is no such $j$. Then $j\le i-2$ and, by the induction hypothesis, $g(s_j)\le \epsilon g^*(s_j)$. Furthermore, $g(s_k) = v(s_k)$ for all $j<k<i$. Let $g_{old}(s_i)$ denote the value of $g(s_i)$ at the start of the current main() loop iteration. Then,
+On the other hand, suppose $s_{i-1}\notin CLOSED$, as might occur after a $thaw()$. Choose the maximum $j<i$ such that $s_j\in CLOSED$, or $j=0$ if there is no such $j$. Then $j\le i-2$ so $c^*(s_j,s_i)\ge 2c_l$ and, by the induction hypothesis, $g(s_j)\le \epsilon g^*(s_j)$.
+
+Let $g_{old}(s_i)$ denote the value of $g(s_i)$ at the time of the most recent $thaw()$ (or $\infty$ is no $thaw()$ has occurred). For all $j < k < i$, $s_k$ can never have been in $OPEN\cup CLOSED$ after the last $thaw()$; for if it had, then it would still be in $OPEN\cup CLOSED$, in contradiction to our construction of $i$ and $j$. Thus, Lemma \ref{lem:prop} implies $g(s_k) = v(s_k)$ held ever since the last $thaw()$, and so $g_{old}(s_i) \le v(s_j) + c^*(s_j,s_i)$. Now by the initialization of $g_p$,
 \begin{eqnarray*}
 g_p(s_i) &\le& g_{old}(s_i) + 2(\epsilon-1)c_l
 \\&\le& v(s_j) + c^*(s_j,s_i) + 2(\epsilon-1)c_l
@@ -354,19 +370,20 @@ g_p(s_i) &\le& g_{old}(s_i) + 2(\epsilon-1)c_l
 \\&\le& \epsilon g^*(s_i)
 \end{eqnarray*}
 
-In all three cases, we found that
+In all three cases, we see that
 \[g_p(s_i) + \epsilon h(s_i,s) \le \epsilon g^*(s_i) + \epsilon c^*(s_i,s) = \epsilon g^*(s).\]
+
 Therefore, by Lemma \ref{lem:bound},
 \[bound(s) \le \min_{s' \in OPEN \cup BE} g_p(s') + \epsilon h(s',s) \le \epsilon g^*(s).\]
 \end{proof}
 
 \begin{cor}
 \label{cor:subopt}
-At the end of a main() loop iteration, the path obtained by following the back-pointers $bp(\cdot)$ from $s_{goal}$ to $s_{start}$ is $\epsilon$-suboptimal.
+At the end of ePA*SE or a search round of PARA*, the path obtained by following the back-pointers $bp(\cdot)$ from $s_{goal}$ to $s_{start}$ is an $\epsilon$-suboptimal solution.
 \end{cor}
 
 \begin{proof}
-The termination condition of PARA* implies $g(s_{goal}) \le bound(s_{goal})$. By construction, the path given by following back-pointers costs at most $g(s_{goal})$. The claim now follows from Theorem \ref{thm:subopt}.
+The termination condition of the search is $g(s_{goal}) \le bound(s_{goal})$. By construction, the path given by following back-pointers costs at most $g(s_{goal})$. The claim now follows from Theorem \ref{thm:subopt}.
 \end{proof}
 
 \section{Performance Guarantees - Blind PARA*}
