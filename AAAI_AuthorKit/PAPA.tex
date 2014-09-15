@@ -395,7 +395,8 @@ ePA*SE and the search rounds of PARA* terminate in finite time, provided $w$, $g
 \end{thm}
 
 \begin{proof}
-The termination condition $g(s_{goal}) \le bound(s_{goal})$ is equivalent to $s_{goal}$ being safe for expansion. Thus, it suffices to prove that, if the search threads were to loop forever, eventually $s_{goal}$ would be expanded. Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s_{goal}$. At any fixed point in the algorithm's operation, let $i$ be maximal such that $g(s_i)\le\epsilon g^*(s_i)$. We need to prove that $s_i$ is eventually expanded. Since expanding $s_i$ ensures $g(s_{i+1})\le \epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, the result then follows by mathematical induction.
+
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s_{goal}$. At a fixed time in the algorithm's operation, let $i$ be maximal such that $g(s_i)<\infty$ and $g(s_i)\le\epsilon g^*(s_i)$. We will prove that $s_i$ is eventually expanded. Since expanding $s_i$ ensures $g(s_{i+1})\le \epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, it then follows by mathematical induction that $g(s_{goal})$ eventually attains a finite value not exceeding $\epsilon g^*(s_{goal})$.
 
 First, suppose for contradiction that $v(s_i)\le \epsilon g^*(s_i)$. Then by Lemma \ref{lem:prop}, $g(s_{i+1}) \le v(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, in contradiction to our construction of $i$. Thus, we must have $g(s_i)\le\epsilon g^*(s_i)<v(s_i)$, which by Lemma \ref{lem:prop} and Theorem \ref{thm:subopt} implies $s_i\in OPEN$. Let $\alpha = \min(w,\epsilon)$ and
 \[C = \frac w\alpha \left( v(s_i) + c(s_i, s_{i+1}) \right) + wh(s_{i+1}, s_N).\]
@@ -403,6 +404,8 @@ First, suppose for contradiction that $v(s_i)\le \epsilon g^*(s_i)$. Then by Lem
 Once $s_i$ is expanded, $C$ is hereafter a constant. If we define $f_\alpha(s) = g(s) + \alpha h(s)$ and fix an $s\in OPEN\cup BE$ with minimum $f_\alpha$-value, then $s$ is safe for expansion. Now, $f(s) \le \frac w\alpha f_\alpha(s) \le \frac w\alpha f_\alpha(s_i) \le C$. Consider the set of states with $f$-value at most $C$. Since $s$ is safe for expansion, and states in $OPEN\cup BE$ are considered in order of increasing $f$, it must be the case that either some state in this set is currently being expanded,  or the next state to be selected for expansion will be in this set. To show that $s_i$ is eventually expanded, it now suffices to show that this set is finite.
 
 Each edge costs at least $c_l$, so any state $s$ which is separated from $s_{start}$ by more than $C/c_l$ edges must have $f(s) \ge g(s) > C$. Having bounded the depth at which the set of states $s$ satisfying $f(s) \le C$ may appear, finite out-degrees imply this set must have finite size.
+
+To summarize, in finite time we obtain $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. By a similar argument to the above, it follows that only finite time can take place before $s_{goal}$ becomes safe for expansion, and the latter criterion is precisely the search termination condition.
 \end{proof}
 
 \section{Performance Guarantees - Blind ePA*SE}
