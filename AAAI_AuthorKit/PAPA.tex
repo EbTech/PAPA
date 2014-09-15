@@ -395,18 +395,19 @@ ePA*SE and the search rounds of PARA* terminate in finite time, provided $w$, $g
 \end{thm}
 
 \begin{proof}
-The termination condition $g(s_{goal}) \le bound(s_{goal})$ is equivalent to $s_{goal}$ being safe for expansion. Thus, it suffices to prove that, if the search threads were to loop forever, eventually $s_{goal}$ would be expanded. Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s_{goal}$. Given that some state $s_i\in\pi$ has been expanded, we will prove that $s_{i+1}$ will also be expanded. Since $s_0 = s_{start}$ is expanded at initialization, the result will then follow by mathematical induction.
-\[\text{Let }C = v(s_i) + c(s_i, s_{i+1}) + \max(w,\epsilon)h(s_{i+1}, s_N).\]
-Once $s_i$ is expanded, this value is hereafter a constant. As a result, we will always have $f(s_{i+1}) = g(s_{i+1}) + wh(s_{i+1}, s_N) \le v(s_i) + c(s_i, s_{i+1}) + wh(s_{i+1}, s_N) \le C$. Likewise, the quantity $f_\epsilon(s_{i+1}) = g(s_{i+1}) + \epsilon h(s_{i+1}, s_N)$ will also be bounded above by $C$.
+The termination condition $g(s_{goal}) \le bound(s_{goal})$ is equivalent to $s_{goal}$ being safe for expansion. Thus, it suffices to prove that, if the search threads were to loop forever, eventually $s_{goal}$ would be expanded. Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s_{goal}$. At any fixed point in the algorithm's operation, let $i$ be maximal such that $g(s_i)\le\epsilon g^*(s_i)$. We need to prove that $s_i$ is eventually expanded. Since expanding $s_i$ ensures $g(s_{i+1})\le \epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, the result then follows by mathematical induction.
 
-Each edge costs at least $c_l$, so any state $s$ which is separated from $s_{start}$ by more than $C/c_l$ edges must have $f(s) \ge g(s) > C$. Since we have bounded the depth at which the set of states $s$ satisfying $f(s) \le C$ may appear, and out-degrees are finite, this set must have finite size. To complete the proof, we will show that if $s_{i+1}\in OPEN$, a thread is searching for state to expand, and no state with $f(s) \le C$ is currently being expanded, then the thread will extract a state $s$ with $f(s) \le C$ for expansion.
+First, suppose for contradiction that $v(s_i)\le \epsilon g^*(s_i)$. Then by Lemma \ref{lem:prop}, $g(s_{i+1}) \le v(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, in contradiction to our construction of $i$. Thus, we must have $g(s_i)\le\epsilon g^*(s_i)<v(s_i)$, which by Lemma \ref{lem:prop} and Theorem \ref{thm:subopt} implies $s_i\in OPEN$. Let $\alpha = \min(w,\epsilon)$ and
+\[C = \frac w\alpha \left( v(s_i) + c(s_i, s_{i+1}) \right) + wh(s_{i+1}, s_N).\]
 
-Therefore, by Lemma \ref{lem:progress}, the search must terminate.
+Once $s_i$ is expanded, $C$ is hereafter a constant. If we define $f_\alpha(s) = g(s) + \alpha h(s)$ and fix an $s\in OPEN\cup BE$ with minimum $f_\alpha$-value, then $s$ is safe for expansion. Now, $f(s) \le \frac w\alpha f_\alpha(s) \le \frac w\alpha f_\alpha(s_i) \le C$. Consider the set of states with $f$-value at most $C$. Since $s$ is safe for expansion, and states in $OPEN\cup BE$ are considered in order of increasing $f$, it must be the case that either some state in this set is currently being expanded,  or the next state to be selected for expansion will be in this set. To show that $s_i$ is eventually expanded, it now suffices to show that this set is finite.
+
+Each edge costs at least $c_l$, so any state $s$ which is separated from $s_{start}$ by more than $C/c_l$ edges must have $f(s) \ge g(s) > C$. Having bounded the depth at which the set of states $s$ satisfying $f(s) \le C$ may appear, finite out-degrees imply this set must have finite size.
 \end{proof}
 
 \section{Performance Guarantees - Blind ePA*SE}
 
-By deleting the while loop in bound($s$), we arrive at a simplified version of the algorithm which we call Blind PARA*. $g_p$ values are no longer used, so their computation can be ommitted. Blind PARA* can only expand states which would be proved safe in PARA* using zero iterations of the bound($s$) loop. Thus, every performance guarantees that we prove for Blind PARA* also holds for PARA*. 
+By deleting the while loop in bound($s$), we arrive at a simplified version of the algorithm which we call Blind PARA*. $g_p$ values are no longer used, so their computation can be ommitted. Blind PARA* can only expand states which would be proved safe in PARA* using zero iterations of the bound($s$) loop. Thus, every performance guarantee that we prove for Blind PARA* also holds for PARA*. 
 
 \begin{thm}
 \label{thm:depth}
