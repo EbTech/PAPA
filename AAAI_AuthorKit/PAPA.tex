@@ -55,9 +55,9 @@ Finally, we present an extension to the anytime setting.
 
 \section{Introduction}
 
-Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which states are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality bounded by a specified factor. With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) and its weighted generalization wPA*SE offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions.
+Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which states are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality bounded by a specified factor. With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) \cite{phillips2014pa} and its weighted generalization wPA*SE offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions.
 
-In this paper, we present Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. These improvements are achieved by tightening the analysis of wPA*SE. This enables several theoretical results, which we also present. We show how ePA*SE generalizes single-source shortest paths, providing performance bounds in the massively parallel limit.
+In this paper, we present Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. These improvements are achieved by tightening the analysis of wPA*SE. This enables several theoretical results, which we also present. We show how ePA*SE generalizes a known parallel algorithm for single-source shortest paths, providing performance bounds in the massively parallel limit.
 
 Finally, we present  Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both Anytime Repairing A* (ARA*) and ePA*SE. ARA* and PARA* are anytime search algorithms, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows.
 
@@ -70,8 +70,8 @@ There are several methods which split the frontier into multiple pieces for para
 Parallel Retracting A* (PRA*) \cite{evett95} uses a hash function to map each state to a processor.
 Parallel Structured Duplicate Detection (PSDD) \cite{zhou07}
 uses a state abstraction function to group states into
-``nblocks” (Zhou and Hansen 2007).
-Each processor takes an entire nblocks and can expand all its states without locking by provided
+``nblocks".
+Each processor takes an entire nblock and can expand all its states without locking, provided
 that neighboring nblocks are not undergoing expansion.
 Parallel Best-NBlock-First (PBNF) \cite{burns_10} fuses the two latter
 approaches, running PRA* with a hashing function
@@ -83,8 +83,7 @@ A more recent algorithm based on PRA* hashing is Hash Distributed A* (HDA*) \cit
 which uses asynchronous message passing to deliver hashed states between processors without blocking the sending thread.
 
 Instead of parallelizing a single search algorithm, \cite{valenzano10} run a variety of planning algorithms in parallel.
-Their solution quality is thus bounded by the worst solution quality bound from the set of algorithms
-run in parallel. Since the planners run independently of one another, the same state may be expanded multiple times.
+By taking the quickest result, their solution quality is bounded by the worst quality bound among their set of search algorithms. Since the planners run independently of one another, the same state may be expanded multiple times.
 Likewise, the preceding approaches must allow states to be re-expanded, perhaps exponentially many times, in order to guarantee bounded suboptimality. Weighted Parallel A* for Slow Expansions (wPA*SE) \cite{phillips2014pa}
 is a recent approach which, like weighted A*, expands each state at most once
 while guaranteeing a specified solution suboptimality factor. At the price of taking more time to select states for expansion, this approach reduces the total number of expansions, often improving planning times.
@@ -107,7 +106,7 @@ Many A* variants work by maintaining a set of upper bound estimates $g(s)$ of th
 
 In hopes of avoiding duplicate effort, the A* variants we consider are designed to expand each state at most once. Thus, before expanding $s$, it's important to verify that we already have a path from $s_{start}$ to $s$ satisfying the desired suboptimality bound. Formally, we say a state $s$ is \textbf{safe for expansion} once we have deduced that $g(s) \le \epsilon g^*(s)$.
 
-wA* sorts the frontier by the numeric keys $f(s) = g(s) + \epsilon h(s,s_{goal})$. Let $bound(s)$ be defined by $g(s) + f(s') - f(s)$ where $s'$ is a state with minimum $f$-value among all frontier states. Then,
+Since we do not know $g^*(s)$ in practice, our general framework takes some easily computable function $bound(s)$ to act as a lower bound on $\epsilon g^*(s)$. wA* sorts the frontier by the numeric keys $f(s) = g(s) + \epsilon h(s,s_{goal})$, which can be used to compute $bound(s) = g(s) + f(s') - f(s)$ where $s'$ is a state with minimum $f$-value among all frontier states. Now,
 \begin{eqnarray*}
 bound(s) &=& g(s) + \min_{s'}\{f(s')\} - f(s)
 \\&=& \min_{s'}\{g(s) + f(s') - f(s)\}
@@ -116,7 +115,7 @@ bound(s) &=& g(s) + \min_{s'}\{f(s')\} - f(s)
 \end{eqnarray*}
 where each $\min$ ranges over the frontier.
 
-Provided $s$ is in the frontier, it can be shown the latter expression is at most $\epsilon g^*(s)$. Therefore, $s$ is considered safe for expansion if $g(s) \le bound(s)$. Substituting in the definition of $bound(s)$, the latter inequality reduces to $0 \le \min_{s'}\{f(s')\} - f(s)$. That is, $s$ must have the minimum $f$-value of the frontier. This can be stated as a principle:
+Provided $s$ is in the frontier, it can be shown the latter expression is at most $\epsilon g^*(s)$ \cite{WA}. Therefore, $s$ is considered safe for expansion if $g(s) \le bound(s)$. Substituting in the definition of $bound(s)$, the latter inequality reduces to $0 \le \min_{s'}\{f(s')\} - f(s)$. That is, $s$ must have the minimum $f$-value of the frontier. This can be stated as a principle:
 
 \begin{rul}[wA* rule]
 A state $s\in OPEN$ is safe for expansion if its $f$-value is minimal among states in the frontier.
@@ -130,13 +129,13 @@ Before describing how wPA*SE generalizes the wA* rule for safe expansion, let's 
 
 Intuitively, $OPEN$ represents the frontier of states which are candidates for expansion, initially consisting of the direct successors of $s_{start}$. Once a safe state is identified and selected for expansion, it's removed from $OPEN$ and inserted into the $CLOSED$ and $BE$ (Being Expanded) lists. $BE$ represents the freshly $CLOSED$ states: they are still in the process of being expanded, but are about to leave the frontier. Its cardinality $|BE|$ will never exceed the number of threads.
 
-Every thread of wPA*SE runs Algorithm \ref{alg:search} in parallel. The search frontier is the union of $OPEN$ and $BE$, which are represented by balanced binary search trees sorted by the key values $f(s) = g(s) + wh(s,s_{goal})$ for some weight parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but possible motivations for alternatives are discussed later.
+Each thread of wPA*SE runs an instance of Algorithm \ref{alg:search}, which successively extracts a state from the frontier and then expands it. The search frontier is the union of $OPEN$ and $BE$, which are represented by balanced binary search trees sorted by the key values $f(s) = g(s) + wh(s,s_{goal})$ for some weight parameter $w\ge 0$. Usually we recommend setting $w=\epsilon$, but possible motivations for alternatives are discussed later.
 
-Each thread begins by attempting to identify and extract an element $s\in OPEN$ which is safe for expansion, i.e. $g(s)\le bound(s)$. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
+A state $s\in OPEN$ can only be extracted if it is safe for expansion, i.e. $g(s)\le bound(s)$. Each time a thread finds a safe $s$, it performs an expansion as described in Algorithm \ref{alg:expand}. The search terminates once the goal is safe for expansion.
 
 The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of $CLOSED$ states for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup BE\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
 
-There are many ways to implement the auxiliary function $bound(s)$; as discussed in the previous section, we obtain a trivially parallelized version of wA* by using $bound(s) = g(s) + f(s') - f(s)$ for the minimizing $s'\in OPEN \cup BE$. wPA*SE uses the implementation in Algorithm \ref{alg:aux}. It satisfies $bound(s) \le \epsilon g^*(s)$, rendering it usable as a rule.
+There are many valid functions that can take the place of $bound(s)$; correctness (i.e. soundness) only requires $bound(s) \le \epsilon g^*(s)$, while termination (i.e. completeness) takes a little more care (see Theorem \ref{thm:complete}). As discussed in the previous section, we obtain a trivially parallelized version of wA* by using $bound(s) = g(s) + f(s') - f(s)$ for the minimizing $s'\in OPEN \cup BE$. wPA*SE uses the substantially tighter $bound$ computed by Algorithm \ref{alg:aux}.
 
 \begin{rul}[wPA*SE rule]
 A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
@@ -200,7 +199,7 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 To sketch the intuition behind this implementation, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s_{start}$ to $s$ passing through some safe $s'\in OPEN\cup BE$. Thus,
 \[g(s) > \epsilon g^*(s) = \epsilon g^*(s') + \epsilon c^*(s',s) \ge g(s') + \epsilon h(s',s).\]
 
-For $s$ to be safe, then, it suffices that $g(s) \le g(s') + \epsilon h(s', s)$ for all $s'\in OPEN\cup BE$. Assuming $w \le \epsilon$, this inequality is guaranteed to hold whenever $f(s') \ge f(s)$. Hence, it suffices to check it for all $s'$ for which $f(s') < f(s)$. These checks are expensive, their cost per state being at least proportional to the parallelism. The principal aim of our extensions is to substantially reduce the number of checks needed while increasing parallelism.
+For $s$ to be safe, then, it suffices that $g(s) \le g(s') + \epsilon h(s', s)$ for all $s'\in OPEN\cup BE$. Assuming $w \le \epsilon$, this inequality is guaranteed to hold whenever $f(s') \ge f(s)$. Hence, it suffices to check it for all $s'$ for which $f(s') < f(s)$. These checks are expensive, their cost per state being proportional to the number $|BE|$ of states undergoing simultaenous expansion. The principal aim of our extensions is to substantially reduce the number of checks needed while increasing parallelism.
 
 Before continuing, we briefly note that atomic locks are used for concurrency. For conceptual clarity, the mechanism presented here is considerably simpler than our C++ implementation. We will not discuss details here, but it bears mentioning that every use of the main data structures is guarded by the same global lock. Where locks are used to group consecutive operations into a single atomic operation, we may treat the corresponding lines of code as simultaneous in the analysis. For example, a state is removed from $OPEN$ at the same time as it gets inserted into $CLOSED$ and $BE$.
 
@@ -229,12 +228,14 @@ Before continuing, we briefly note that atomic locks are used for concurrency. F
 
 Having formulated wPA*SE in a convenient new framework, we are now prepared to present our extensions.
 
-We introduce the assignable variables $g_p(s)$. Their semantics are similar to $bound(s)$ but somewhat more intricate. While $bound(s)/\epsilon$ is a lower bound on the unrestricted distance $g^*(s)$ from $s_{start}$ to $s$, $g_p(s)/\epsilon$ is a lower bound on the cost of paths in which $s$ is immediately preceded by a $CLOSED$ state. That is, $g_p(s) \le \epsilon (g^*(s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, $expand(s)$ should initialize $g_p$ to $\infty$ just as it does for $g$ and $v$, and then make the following assignment immediately before the second \textbf{if} statement of $expand(s)$:
+We introduce the assignable variables $g_p(s)$. Their semantics are related to $g(s)$ and $bound(s)$ with subtle alterations. While $bound(s)/\epsilon$ is a lower bound on unrestricted distance $g^*(s)$ from $s_{start}$ to $s$, $g_p(s)/\epsilon$ is a lower bound on the cost of $s_{start}$-to-$s$ paths in which $s$ is immediately preceded by a $CLOSED$ state. That is, $g_p(s) \le \epsilon (g^*(s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, $expand(s)$ should initialize $g_p$ to $\infty$ just as it does for $g$ and $v$, and then make the following assignment immediately before the second \textbf{if} statement of $expand(s)$:
 \[g_p(s') := \min(g_p(s'),\; b + \epsilon c(s,s'))\]
 
 Here, $b$ is the lower bound on $\epsilon g^*(s)$ computed by the $bound(s)$ call when $s$ was selected for expansion, or $0$ if $s=s_{start}$. Note that at all times, $g(s) \le g_p(s)$.
 
-The performance gains of ePA*SE come from changing the implementation of $bound(s)$ to the version shown in Algorithm \ref{alg:eaux}. It now makes use of a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about the possible costs, but ePA*SE can make use of larger bounds if available.
+The performance gains of ePA*SE come from changing the implementation of $bound(s)$ to the version shown in Algorithm \ref{alg:eaux}. It now makes use of $g_p$ as well as a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about the possible costs, but ePA*SE can make use of larger bounds if available.
+
+The introduction of $g_p$ and $c_l$ increases $bound(s)$, potentially increasing the number of nodes which are simultaneously safe for expansion. As an additional benefit, safe nodes are detected more quickly when the loop terminates early: for instance, if $w \le \epsilon$ and $f(s) - f(s') \le (2\epsilon-w-1)c_l$, the loop will not consider $s'$. Provided $s$ is safe for expansion, the loop in Algorithm \ref{alg:eaux} never takes more iterations than its wPA*SE equivalent. In a later section, our analysis of this early termination property leads to Theorem \ref{thm:depth}.
 
 \begin{rul}[ePA*SE rule]
 A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:eaux}.
@@ -312,7 +313,7 @@ At all times, the following invariants hold:
 \item $BE\cup FROZEN \subseteq CLOSED$
 \item If $g(s)<\infty$, $bp(\cdot)$ can be followed from $s$ back to $s_{start}$ to yield a path from $s_{start}$ to $s$ costing at most $g(s)$
 \item If $s\ne s_{start}$, then $g(s) + (\epsilon-1)c_l \le g_p(s)$,
-\\$g_p \le min_{s'\in CLOSED}\left\{v(s') + \epsilon c(s',s)\right\}$, and
+\\$g_p(s) \le min_{s'\in CLOSED}\left\{v(s') + \epsilon c(s',s)\right\}$, and
 \\$g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\left\{v(s') + c(s',s)\right\}$
 \item $s\in OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) < v(s)$
 \item $s\notin OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) = v(s)$
@@ -448,46 +449,42 @@ Each edge costs at least $c_l$, so any state $s$ which is separated from $s_{sta
 To summarize, in finite time we obtain $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. By a similar argument to the above, it follows that only finite time can take place before $s_{goal}$ becomes safe for expansion, and the latter criterion is precisely the search termination condition.
 \end{proof}
 
-\section{Experiments}
+\subsection{Asymptotic Time Complexity}
 
-We tested wPA*SE and ePA*SE with parameters $w=\epsilon=1.5$ on a 2D grid domain with 8-connected cells. We used the same 20 maps as \cite{phillips2014pa} from a commonly used pathfinding benchmark \cite{sturtevant2012benchmarks}. The searches were run on an Amazon EC2 machine with a 32-core Intel Xeon E5-2680v2. We varied the time per expansion between $10^{-6}$, $10^{-5}$ and $10^{-4}$ seconds, and the number of threads between 1, 2, 4, 8, 16, 24 and 32.
+To get a sense for the increased parallelism of ePA*SE, we analyze its worst-case time complexity in the limit where an unbounded supply of processors are available, the goal state is far from the start, and $w \le \epsilon$. To simplify matters, we consider a ``blind" version of ePA*SE which considers only the frontmost state $s\in OPEN$ and in which, if the while loop condition of Algorithm \ref{alg:eaux} succeeds, $s$ is immediately deemed unsafe for expansion. This effectively removes the while loop. 
 
-As shown below, ePA*SE demonstrates moderate gains over wPA*SE as the number of cores increases, especially when expansion times are fairly fast. However, although ePA*SE demonstrates greater parallelism than wPA*SE, both algorithms falter when the number of threads is too high. This seems to be due to the fact that the data structure locks ensure only one thread can work on state extraction at a time. If the number of threads is high, some expansions finish before a new state is extracted, so the threads never become saturated, resulting in needless overhead. To achieve greater parallelism, it may become necessary to parallelize the extraction process so that multiple threads can access the frontier simultaneously.
+If $|OPEN|$ is the frontier size, $|BE|$ is the number of states deemed simultaneously safe for expansion, and $D$ is the maximum out-degree of a state, then having each of $|BE|$ threads simultanously expand one node from the frontier now takes $O\left((|BE|+D)\log|OPEN|\right)$ time. Since any state deemed safe by Blind ePA*SE can be extracted just as quickly by ePA*SE, any performance guarantees we prove here will also apply to ePA*SE and PARA*.
 
-\includegraphics[scale=0.5]{time_sweep_all.png}
-
-\section{Performance Analysis and Blind ePA*SE}
-
-Here we state some performance properties of ePA*SE in the massively parallel limit. See the extended version of this paper for proofs, as well as a further extension inspired by \cite{klein1997randomized} which offers similar performance bounds when, instead of the lower bound $c_l$, we have an estimate of the optimal solution's mean edge cost $c_m$.
-
-By deleting the while loop in $bound(s)$, we arrive at Blind ePA*SE, a simplified version of ePA*SE in which $g_p$ values are no longer used. Blind ePA*SE can only expand states which would complete zero iterations of the $bound(s)$ loop before being declared safe for expansion by ePA*SE. Thus, the performance guarantees shown here for Blind ePA*SE will also hold for regular ePA*SE.
-
-Our theoretical measure of performance is a certain notion of \textbf{parallel depth}. Extracting a state from the frontier takes time logarithmic in the size of the queue; for our purposes, we consider the extraction and subsequent expansion to take one unit of time. Parallel depth is defined as the number of time units required if an unlimited number of threads run in parallel. All states with $f$-value deviating by no more than $2\epsilon-w-1$ from the minimum are safe for expansion, and they are considered to be simultaneously expanded in a single time unit. In such a setting, the following bound applies:
+Let one \textbf{parallel expansion time unit} be the time needed for all threads to simultaneously extract and expand one state, unless the blind safety check fails in which case they expand nothing. Algorithm \ref{alg:eaux} (and its blind variant) declares all states with $f$-value deviating by no more than $(2\epsilon-w-1)c_l$ safe for expansion, so they are all expanded in a single time unit. In such a setting, the following bound applies:
 
 \begin{thm}
 \label{thm:depth}
-Suppose $w \le 1$. Ignoring lower-order terms that lose significance as $g(s_{goal})/c_l \rightarrow \infty$, the parallel depth of Blind ePA*SE is bounded above by
+If $w \le 1$, ePA*SE completes in at most
 \[\min\left(\frac{\epsilon g^*(s_{goal})}{(1-w)c_l},\;
-\frac{\left(\epsilon g^*(s_{goal})\right)^2 }{(4\epsilon-2w-2)c_l^2}\right).\]
+\frac{\left(\epsilon g^*(s_{goal})\right)^2 + O(\epsilon g^*(s_{goal})) }{(4\epsilon-2w-2)c_l^2} \right).\]
+parallel expansion time units.
 \end{thm}
 
 \begin{proof}
-We prove the two bounds separately. For the first, note that if the minimum $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can simultaneously be expanded. Since $h$ is consistent, the successors' $f$-values are at least $f_{min} + (1-w)c_l$. Hence, one time unit increases the minimum $f$-value by at least $(1-w)c_l$. Now when $s_{goal}$ is expanded, $f(g_{goal}) \le \epsilon g^*(s_{goal})$. Therefore, the parallel depth is at most
-\[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}.\]
+We prove the two bounds separately. For the first, note that if the minimum $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can be expanded simultaneously. Since $h$ is consistent, the successors' $f$-values are at least $f_{min} + (1-w)c_l$. Hence, one time unit increases $f_{min}$ by at least $(1-w)c_l$. When $s_{goal}$ is expanded, $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. Since $f_{min}$ is initially $f(s_{start}) = h(s_{start}) \ge 0$, it suffices to take
+\[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\text{ parallel expansion time units.}\]
 
-For the other bound, write $t$ for $2\epsilon-w-1$. Notice that since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all states with $f$-value up to $f_{min} + tc_l$ are always safe for expansion. And during each iteration of the simultaneous expansions, the $g$-value of all such states increases by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every state in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, a bound on the total iteration count is (where $u = \frac{\epsilon g^*(s_{goal})}{c_lt}$)
+For the other bound, let $t=2\epsilon-w-1$. Since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all states with $f$-value up to $f_{min} + tc_l$ are always safe for expansion.
+
+With each subsequent time step, states with $f$-value up to $f_{min} + tc_l$ have their $g$-values increased by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every state in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, the total number of parallel expansion time units required is at most
 \begin{eqnarray*}
-&&t + 2t + 3t + ... + \lfloor u+1 \rfloor t
-\\&\le& \frac 1 2 (u+1)(u+2)t
-\\&\approxeq& \frac {u^2t} 2
+&&t + 2t + 3t + \ldots + \lfloor u+1 \rfloor t
+\\&\le& \frac t2 (u+1)(u+2)
+\\&=& \frac t2 (u^2 + O(u))
+\\\text{where }u &=& \frac{\epsilon g^*(s_{goal})}{c_lt}.
 \end{eqnarray*}
 \end{proof}
 
-Thus, parallel depth is roughly linear in the goal distance when $w$ is considerably smaller than 1, and becomes quadratic as $w \rightarrow 1$ provided $w \le 1 < \epsilon$. Compare this against the exponential complexity of sequential search. This result suggests that using $w < \epsilon$ might become favorable as upcoming technological developments increase the number of available cores. The case $w = 0$ ignores all information about the goal, yielding a parallel anytime algorithm for the classic problem of single-source shortest paths.
+Thus, if we ignore factors hidden in the time unit, the worst-case time complexity of ePA*SE is roughly linear in the goal distance when $w$ is considerably smaller than 1, and becomes quadratic as $w \rightarrow 1$. Compare this against the exponential complexity of sequential search. This result suggests that using $w < \epsilon$ might become favorable as upcoming technological developments raise the supply of processor cores. The case $w = 0$ completely ignores the heuristic-to-goal, yielding a parallel anytime algorithm for the classic  single-source shortest paths problem.
 
-Finally, the case $w > \epsilon$ merits future investigation as it allows a greedier bias in the frontier ordering, without loosening the suboptimality guarantee. While we de not recommend it in practice as it requires extensive checking for state extraction, it may be worthwhile if expansion times are particularly long. Furthermore, we gain usable information from the additional checks, as the result of $bound(s)$ becomes tighter. The $w = \infty$ extreme corresponds to sorting by $h$-value. Indeed, if we are willing to check against all of $OPEN\cup BE$, arbitrary orderings become permissible, but at the loss of the completeness promised by Theorem \ref{thm:complete}.
+Finally, the case $w > \epsilon$ merits future investigation as it allows a greedier bias in the frontier ordering, without loosening the suboptimality guarantee. While we de not recommend it in practice as it demands extensive checking during state extraction, it may be worthwhile if expansion times are especially long. Furthermore, we gain usable information from the additional checks, as the tightened result of $bound(s)$ propagates via $g_p$. The $w = \infty$ extreme corresponds to sorting by $h$-value. Indeed, if we are willing to check against all of $OPEN\cup BE$, then arbitrary orderings on $OPEN$ and $BE$ become permissible, but at the price of the completeness promised by Theorem \ref{thm:complete}.
 
-\subsection{Edgewise Supobtimality}
+\subsection{Edgewise Supobtimality (must rewrite or delete)}
 
 Let $k(s)$ be the least number of edges used in a minimum-cost path to $s$ and fix $\delta > 0$. If $g_{front}$ and $g_{back}$ are each increased by $2\delta$, then by similar arguments to the proofs earlier in the paper, we find that, upon expanding $s$, $g(s) \le \epsilon g^*(s) + \delta k(s)$.
 
@@ -512,6 +509,24 @@ If, in addition, $c_m \ge g^*(s)/(mk(s))$, the depth is at most
 \end{cor}
 
 In other words, if we know the mean edge cost up to a small constant factor, we can find approximately optimal paths in a depth which is within a small factor of the ``omnicient" algorithm that expands only along the optimal path.
+
+\section{Experiments}
+
+We tested wPA*SE and ePA*SE with parameters $w=\epsilon=1.5$ on a 2D grid domain with 8-connected cells. We used the same 20 maps as \cite{phillips2014pa} from a commonly used pathfinding benchmark \cite{sturtevant2012benchmarks}. The searches were run on an Amazon EC2 machine with a 32-core Intel Xeon E5-2680v2.
+
+In the first set of experiments, we varied the time per expansion between $10^{-6}$, $10^{-5}$ and $10^{-4}$ seconds, and the number of threads between 1, 2, 4, 8, 16, 24 and 32. For each of these settings, Figure \ref{fig:time} displays the average speedup factor: the time taken by a sequential wA* search divided by the time taken by wPA*SE or ePA*SE. We observe moderate gains over wPA*SE as the number of cores increases, especially when expansion times are fairly fast. However, although ePA*SE demonstrates greater parallelism than wPA*SE, both algorithms falter when the number of threads is too high. This seems to be due to the fact that the data structure locks ensure only one thread can work on state extraction at a time. If the number of threads is high, some expansions finish before a new state is extracted, so the threads never become saturated, resulting in needless overhead. To achieve greater parallelism, it may become necessary to parallelize the extraction process so that multiple threads can access the frontier simultaneously.
+
+In the second set of experiments, we varied the time per expansion between $10^{-5}$ and $10^{-4}$ seconds, and the weight parameters $w=\epsilon$ between 1.1, 1,5, 2, 3 and 4. Figure \ref{fig:eps} displays the speedup factor for each setting in a similar format. We observe that ePA*SE achieves very high gains when the weight is low, gradually dissipating as the weight increases. In particular, when the weight is close to 1, the speedup over sequential search is approximately linear in the number of processors. ePA*SE is found to perform at least as well as the tested competitors in all cases, and considerably better in some classes of scenarios.
+
+\begin{figure}[fig:time]
+\centering\includegraphics[scale=0.55]{time_sweep_all.png}
+\caption{2D grid speedup as the number of threads and expansion time are varied.}
+\end{figure}
+
+\begin{figure}[fig:tps]
+\centering\includegraphics[scale=0.55]{eps_sweep_para.png}
+\caption{2D grid speedup as the weight parameter and expansion time are varied.}
+\end{figure}
 
 \section{Conclusion}
 
