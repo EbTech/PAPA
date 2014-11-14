@@ -55,11 +55,13 @@ Finally, we present an extension to the anytime setting.
 
 \section{Introduction}
 
-Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the means by which states are selected from the frontier for expansion. In the weighted A* algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which guarantees suboptimality bounded by a specified factor. With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) \cite{phillips2014pa} and its weighted generalization wPA*SE offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions.
+Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the order by which states are selected from the frontier for expansion. In the weighted A* (wA*) algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which ensures suboptimality bounded by a specified factor. When provided with a consistent heuristic, wA* takes care to expand a state only after finding an approximately optimal path reaching it. Thus, wA* can guarantee approximate optimality without ever re-expanding a state.
 
-In this paper, we present Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. These improvements are achieved by tightening the analysis of wPA*SE. This enables several theoretical results, which we also present. We show how ePA*SE generalizes a known parallel algorithm for single-source shortest paths, providing performance bounds in the massively parallel limit.
+With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) \cite{phillips2014pa}, and its weighted generalization wPA*SE, offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions. Among parallel algorithms for graph search, wPA*SE stands out for meeting the same theoretical guarantee as wA*: approximate optimality without repeated expansions.
 
-Finally, we present  Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both Anytime Repairing A* (ARA*) and ePA*SE. ARA* and PARA* are anytime search algorithms, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows.
+In this paper, we analyze in greater depth the conditions under which A* variants can meet this theoretical guarantee. This analysis naturally leads to Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. This enables several theoretical results, which we also present. Our final result  shows how ePA*SE generalizes a parallel approximation algorithm for single-source shortest paths \cite{klein1997randomized}, providing time complexity bounds in the massively parallel limit.
+
+DELETE: Finally, we present  Parallel Anytime Repairing A* (PARA*), a simultaneous improvement over both Anytime Repairing A* (ARA*) and ePA*SE. ARA* and PARA* are anytime search algorithms, gradually reducing the goal-directed bias to improve solution cost as much as planning time allows.
 
 \section{Related Work}
 
@@ -455,23 +457,22 @@ To get a sense for the increased parallelism of ePA*SE, we analyze its worst-cas
 
 If $|OPEN|$ is the frontier size, $|BE|$ is the number of states deemed simultaneously safe for expansion, and $D$ is the maximum out-degree of a state, then having each of $|BE|$ threads simultanously expand one node from the frontier now takes $O\left((|BE|+D)\log|OPEN|\right)$ time. Since any state deemed safe by Blind ePA*SE can be extracted just as quickly by ePA*SE, any performance guarantees we prove here will also apply to ePA*SE and PARA*.
 
-Let one \textbf{parallel expansion time unit} be the time needed for all threads to simultaneously extract and expand one state, unless the blind safety check fails in which case they expand nothing. Algorithm \ref{alg:eaux} (and its blind variant) declares all states with $f$-value deviating by no more than $(2\epsilon-w-1)c_l$ safe for expansion, so they are all expanded in a single time unit. In such a setting, the following bound applies:
+Let one \textbf{parallel expansion time (PET) unit} be the time needed for all threads to simultaneously extract and expand one state, unless the blind safety check fails in which case they expand nothing. Algorithm \ref{alg:eaux} (and its blind variant) declares all states with $f$-value deviating by no more than $(2\epsilon-w-1)c_l$ safe for expansion, so they are all expanded in a single PET. In such a setting, the following bound applies:
 
 \begin{thm}
 \label{thm:depth}
 If $w \le 1$, ePA*SE completes in at most
 \[\min\left(\frac{\epsilon g^*(s_{goal})}{(1-w)c_l},\;
-\frac{\left(\epsilon g^*(s_{goal})\right)^2 + O(\epsilon g^*(s_{goal})) }{(4\epsilon-2w-2)c_l^2} \right).\]
-parallel expansion time units.
+\frac{\left(\epsilon g^*(s_{goal})\right)^2 + O(g^*(s_{goal})) }{(4\epsilon-2w-2)c_l^2} \right)\text{ PETs.}\]
 \end{thm}
 
 \begin{proof}
-We prove the two bounds separately. For the first, note that if the minimum $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can be expanded simultaneously. Since $h$ is consistent, the successors' $f$-values are at least $f_{min} + (1-w)c_l$. Hence, one time unit increases $f_{min}$ by at least $(1-w)c_l$. When $s_{goal}$ is expanded, $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. Since $f_{min}$ is initially $f(s_{start}) = h(s_{start}) \ge 0$, it suffices to take
-\[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\text{ parallel expansion time units.}\]
+We prove the two bounds separately. For the first, note that if the minimum $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can be expanded simultaneously. Since $h$ is consistent, the successors' $f$-values are at least $f_{min} + (1-w)c_l$. Hence, one PET increases $f_{min}$ by at least $(1-w)c_l$. When $s_{goal}$ is expanded, $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. Since $f_{min}$ is initially $f(s_{start}) = h(s_{start}) \ge 0$, it suffices to take
+\[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\text{ PETs.}\]
 
 For the other bound, let $t=2\epsilon-w-1$. Since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all states with $f$-value up to $f_{min} + tc_l$ are always safe for expansion.
 
-With each subsequent time step, states with $f$-value up to $f_{min} + tc_l$ have their $g$-values increased by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every state in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, the total number of parallel expansion time units required is at most
+With each subsequent time step, states with $f$-value up to $f_{min} + tc_l$ have their $g$-values increased by at least $c_l$. Since $g$ cannot exceed $f$, this continues for at most $(f_{min} + tc_l) / c_l = f_{min}/c_l + t$ iterations, after which every state in $OPEN$ has $f$-value $\ge f_{min} + tc_l$. Continuing this process until $f_{min}$ exceeds $\epsilon g^*(s_{goal})$, the total number of PETs required is at most
 \begin{eqnarray*}
 &&t + 2t + 3t + \ldots + \lfloor u+1 \rfloor t
 \\&\le& \frac t2 (u+1)(u+2)
@@ -480,35 +481,31 @@ With each subsequent time step, states with $f$-value up to $f_{min} + tc_l$ hav
 \end{eqnarray*}
 \end{proof}
 
-Thus, if we ignore factors hidden in the time unit, the worst-case time complexity of ePA*SE is roughly linear in the goal distance when $w$ is considerably smaller than 1, and becomes quadratic as $w \rightarrow 1$. Compare this against the exponential complexity of sequential search. This result suggests that using $w < \epsilon$ might become favorable as upcoming technological developments raise the supply of processor cores. The case $w = 0$ completely ignores the heuristic-to-goal, yielding a parallel anytime algorithm for the classic  single-source shortest paths problem.
+Thus, if we ignore factors hidden in the PET unit, the worst-case time complexity of ePA*SE is roughly linear in the goal distance when $w$ is considerably smaller than 1, and becomes quadratic as $w \rightarrow 1$. Compare this against the exponential complexity of sequential search. This result suggests that using $w < \epsilon$ might become favorable as upcoming technological developments raise the supply of processor cores. The case $w = 0$ completely ignores the heuristic-to-goal, yielding a parallel anytime algorithm for the classic  single-source shortest paths problem.
 
 Finally, the case $w > \epsilon$ merits future investigation as it allows a greedier bias in the frontier ordering, without loosening the suboptimality guarantee. While we de not recommend it in practice as it demands extensive checking during state extraction, it may be worthwhile if expansion times are especially long. Furthermore, we gain usable information from the additional checks, as the tightened result of $bound(s)$ propagates via $g_p$. The $w = \infty$ extreme corresponds to sorting by $h$-value. Indeed, if we are willing to check against all of $OPEN\cup BE$, then arbitrary orderings on $OPEN$ and $BE$ become permissible, but at the price of the completeness promised by Theorem \ref{thm:complete}.
 
-\subsection{Edgewise Supobtimality (must rewrite or delete)}
-
-Let $k(s)$ be the least number of edges used in a minimum-cost path to $s$ and fix $\delta > 0$. If $g_{front}$ and $g_{back}$ are each increased by $2\delta$, then by similar arguments to the proofs earlier in the paper, we find that, upon expanding $s$, $g(s) \le \epsilon g^*(s) + \delta k(s)$.
-
-The following is an extension inspired by \cite{klein1997randomized}: suppose $c_l = 0$ or $c_l$ is known to be very small compared to the mean edge cost $c_m$ along the optimal path. In such a case, the bound in Theorem \ref{thm:depth} scales poorly. To remedy the situation, we ``grow" the small edges, effectively running ePA*SE with $c_l' = c_l + \delta$ and $c'(s,s') = \max(c(s,s'),\;c_l')$.
+Finally, suppose that in place of the minimum cost $c_l$, we are given an estimate $c_m$ of the mean edge cost along a solution. Taking inspiration from \cite{klein1997randomized}, we ``grow" the small edges by a length not exceeding $\delta = (\alpha-1)c_m$ where $\alpha$ is the desired suboptimality bound. We then run ePA*SE with the bound $c_l' = c_l+\delta$, costs $c'(s,s') = \max(c(s,s'), c_l')$, and heuristic $h'(s,s') = \max(h(s,s'), c_l')$. The resulting search satisfies a bound analoguous to Theorem \ref{thm:depth}.
 
 \begin{thm}
 \label{thm:delta}
-If the mean cost of the edges along a minimum-cost path to $s$ is at least $c_m$, then upon expansion, $g(s) \le \epsilon(1+\delta/c_m)g^*(s)$. Therefore, to achieve a suboptimality factor of $\alpha$, we can set $\epsilon=1$ and $\delta = (\alpha-1)c_m$.
+If the mean cost of the edges along a minimum-cost path to $s$ is at least $c_m$, then upon expansion, $g'(s) \le \epsilon(1+\delta/c_m)g^*(s)$. Therefore, to achieve a suboptimality factor $\alpha$, we can set $\epsilon=1$ and $\delta = (\alpha-1)c_m$.
 \end{thm}
 
 \begin{proof}
-Let $k(s)$ be the number of edges along a minimum-cost path to $s$. We assumed $c_m \le g^*(s) / k(s)$, so $k(s) \le g^*(s) / c_m$.
-It follows from Lemma \ref{thm:subopt} that $g'(s) \le \epsilon g'^*(s) \le \epsilon(g^*(s) + \delta k(s)) \le \epsilon(1+\delta/c_m)g^*(s)$.
+Let $k(s)$ be the number of edges along a minimum-cost path to $s$. We assumed $g^*(s) / k(s) \ge c_m$, so $k(s) \le g^*(s) / c_m$.
+Since edge costs were increased by at most $\delta$, Theorem \ref{thm:subopt} implies $g'(s) \le \epsilon g'^*(s) \le \epsilon(g^*(s) + \delta k(s)) \le \epsilon(1+\delta/c_m)g^*(s)$. Furthermore, since no edge cost was decreased, any path found on the modified graph costs no more on the original graph.
 \end{proof}
 
 \begin{cor}
 \label{cor:delta}
-If $w \le 1$ and $c_m \le g^*(s) / k(s)$, the parallel depth of Blind PARA* can be improved to
-\[\frac{\epsilon g^*(s_{goal})}{(1-w)(c_l+(\epsilon-1)c_m)}.\]
-If, in addition, $c_m \ge g^*(s)/(mk(s))$, the depth is at most
-\[\frac{\epsilon mk(s)}{(1-w)(\epsilon-1)}\]
+If $w \le 1$ and $c_m \le g^*(s_{goal}) / k(s_{goal})$, ePA*SE can be used to find an $\alpha$-optimal solution in at most
+\[\frac{\alpha g^*(s_{goal})}{(1-w)(c_l+(\alpha-1)c_m)}\text{ PETS.}\]
+If, in addition, $c_m \ge g^*(s_{goal})/(mk(s_{goal}))$, this method takes at most
+\[\frac{\alpha mk(s_{goal})}{(1-w)(\alpha-1)}\text{ PETS.}\]
 \end{cor}
 
-In other words, if we know the mean edge cost up to a small constant factor, we can find approximately optimal paths in a depth which is within a small factor of the ``omnicient" algorithm that expands only along the optimal path.
+In other words, if $\alpha$ is far from $1$ and we know the mean edge cost up to a small constant factor, we can find approximately optimal paths within a small time factor of the ``omnicient" algorithm that expands only along the optimal path.
 
 \section{Experiments}
 
