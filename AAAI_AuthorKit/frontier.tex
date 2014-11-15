@@ -23,7 +23,7 @@
 \setlength{\pdfpagewidth}{8.5in}
 \setlength{\pdfpageheight}{11in}
 \pdfinfo{
-/Title (Enhanced Parallel A* for Slow Expansions)
+/Title (Constraints on Frontier Expansion for Approximate Shortest Paths)
 %/Author (Aram Ebtekar, Mike Phillips, Sven Koenig, Maxim Likhachev)
 /Keywords (weighted A* search, parallel algorithm, heuristic)
 }
@@ -32,24 +32,23 @@
 % The file aaai.sty is the style file for AAAI Press 
 % proceedings, working notes, and technical reports.
 %
-\title{Enhanced Parallel A* for Slow Expansions}
+\title{Constraints on Frontier Expansion for Approximate Shortest Paths}
 \author{Aram Ebtekar$^\dagger$ \and Mike Phillips$^\dagger$ \and Sven Koenig\thanks{University of Southern California, Los Angeles, CA 90089} \and Maxim Likhachev% <-this % stops a space
 \thanks{Carnegie Mellon University, Pittsburgh, PA 15217}% <-this % stops a space
 %
 }
-\author{AAAI 2015 Submission 2327}% anonymizer
+\author{ICAPS 2015 Submission 166}% anonymizer
 \maketitle
 \begin{abstract}
 \begin{quote}
-In order for heuristic searches to take advantage of modern CPU architectures, the algorithms must be parellelized.
-wPA*SE is a recent parallel variant of A*, which expands each state at most once and guarantees a solution cost not exceeding a specified factor of the optimal.
-wPA*SE can achieve a nearly linear speedup in the number of processor cores if expansions are sufficiently time-consuming to dominate the search runtime.
+Given a consistent heuristic, the weighted A* search algorithm chooses an ordering of frontier expansions in such a way that an approximately optimal solution is found without needing any re-expansions.
+wPA*SE is a recent parallel variant of A* which offers the same guarantee and can achieve a nearly linear speedup in the number of processor cores, provided expansions are sufficiently time-consuming to dominate the search runtime.
 Much of the overhead of wPA*SE is due to careful selection of states to expand, as required to meet the theoretical guarantees.
-In this work, we present extensions to wPA*SE that maintain speedups at faster expansion rates than wPA*SE allows.
-They reduce the overhead of selecting states for expansion by maintaining tighter bounds on the suboptimality of each state.
-On the theoretical side, we provide the same guarantees on completeness and solution quality as wPA*SE.
-Experimentally, we show comparable performance to wPA*SE when expansions are slow, and better performance as expansions become faster and the number of cores increases.
-Finally, we present an extension to the anytime setting.
+In this work, we look at several criteria which sufficiently constrain the frontier's expansion.
+In particular, we present novel extensions to wPA*SE that maintain speedups at faster expansion rates than wPA*SE allows.
+They generalize the state expansion criterion so that more states are eligible for concurrent expansion, while also making the criterion cheaper to compute.
+On the theoretical side, we prove the same guarantees on completeness and solution quality as wA* and wPA*SE, as well as a parallel time complexity result.
+Experimentally, we obtain comparable performance to wPA*SE when expansions are very slow, and better performance as expansions become faster and the number of cores increases.
 \end{quote}
 \end{abstract}
 
