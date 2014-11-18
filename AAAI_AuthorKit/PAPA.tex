@@ -165,12 +165,16 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 \STATE continue
 \ENDIF
 \STATE insert $s$ into $CLOSED$
+\IF{$v(s)\le bound(s)$}
+\STATE insert $s$ into $FROZEN$
+\ELSE
 \STATE insert $s$ into $BE$ with key $f(s)$
 \STATE $v_{expand} := g(s)$
 \STATE UNLOCK $s$
 \STATE $expand(s)$
 \STATE $v(s) := v_{expand}$
 \STATE remove $s$ from $BE$
+\ENDIF
 \ENDWHILE
 \end{algorithmic}
 \end{algorithm}
