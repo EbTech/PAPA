@@ -56,7 +56,7 @@ Breadth-first and depth-first search are generalized by a class of frontier-base
 
 With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) \cite{phillips2014pa}, and its weighted generalization wPA*SE, offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions. Among parallel algorithms for graph search, wPA*SE stands out for meeting the same theoretical guarantee as wA*: approximate optimality without repeated expansions.
 
-In this paper, we analyze in greater depth the conditions under which A* variants can meet this theoretical guarantee. This analysis naturally leads to Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. This enables several theoretical results, which we also present. Our final result  shows how ePA*SE generalizes a parallel approximation algorithm for single-source shortest paths \cite{klein1997randomized}, providing time complexity bounds in the massively parallel limit.
+In this paper, we analyze in greater depth the conditions under which A* variants can meet this theoretical guarantee. This analysis naturally leads to the theory of expansion rules and a new heuristic search algorithm we call Enhanced PA*SE (ePA*SE). Its performance at least rivals wPA*SE in general, and surpasses it when expansions times are faster or a lot of processor cores are available. This enables several theoretical results, which we also present. Our final result concerns a special case of ePA*SE that resembles a parallel approximation algorithm for single-source shortest paths \cite{klein1997randomized}, providing time complexity bounds in the massively parallel limit.
 
 \section{Related Work}
 
@@ -81,7 +81,9 @@ which uses asynchronous message passing to deliver hashed states between process
 
 Instead of parallelizing a single search algorithm, \cite{valenzano10} run a variety of planning algorithms in parallel.
 By taking the quickest result, their solution quality is bounded by the worst quality bound among their set of search algorithms. Since the planners run independently of one another, the same state may be expanded multiple times.
-Likewise, the preceding approaches must allow states to be re-expanded, perhaps exponentially many times, in order to guarantee bounded suboptimality. Weighted Parallel A* for Slow Expansions (wPA*SE) \cite{phillips2014pa}
+Likewise, the preceding approaches must allow states to be re-expanded, perhaps exponentially many times, in order to guarantee bounded suboptimality.
+
+Weighted Parallel A* for Slow Expansions (wPA*SE) \cite{phillips2014pa}
 is a recent approach which, like weighted A*, expands each state at most once
 while guaranteeing a specified solution suboptimality factor. At the price of taking more time to select states for expansion, this approach reduces the total number of expansions, often improving planning times.
 In this paper, we extend wPA*SE to speed up the identification of states eligible for simultaneous expansion, while also increasing the number of eligible states.
@@ -231,7 +233,7 @@ To estimate and make use of this margin, we introduce the variables $g_p(s)$. Th
 
 The performance gains of ePA*SE come from changing the implementation of $bound(s)$ to the version shown in Algorithm \ref{alg:eaux}. It now makes use of $g_p$ as well as a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about the possible costs, but ePA*SE can make use of larger bounds if available.
 
-The introduction of $g_p$ and $c_l$ increases $bound(s)$, potentially increasing the number of nodes which are safe for expansion at any given time. As an additional benefit, safe nodes are detected more quickly than in wPA*SE because the loop terminates sooner: for instance, if $w \le \epsilon$ and $f(s) - f(s') \le (2\epsilon-w-1)c_l$, the loop will terminate at $s'$. Provided $s$ is safe for expansion, the loop in Algorithm \ref{alg:eaux} never takes more iterations than its wPA*SE equivalent. In a later section, our complexity theoretic analysis of this early termination property leads to Theorem \ref{thm:depth}.
+The introduction of $g_p$ and $c_l$ increases $bound(s)$, potentially increasing the number of states which are safe for expansion at any given time. As an additional benefit, safe states are detected more quickly than in wPA*SE because the loop terminates sooner: for instance, if $w \le \epsilon$ and $f(s) - f(s') \le (2\epsilon-w-1)c_l$, the loop will terminate at $s'$. Provided $s$ is safe for expansion, the loop in Algorithm \ref{alg:eaux} never takes more iterations than its wPA*SE equivalent. In a later section, our complexity theoretic analysis of this early termination property leads to Theorem \ref{thm:depth}.
 
 \begin{rul}[ePA*SE rule]
 A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:eaux}.
@@ -263,17 +265,17 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 Recall that wPA*SE lower-bounds $\epsilon g^*(s)$ by the minimum of $g(s') + \epsilon h(s',s)$ among $s'\in OPEN\cup BE$. However, not every element of $OPEN\cup BE$ requires individual consideration. Indeed, suppose we choose an arbitrary subset $V\subseteq OPEN\cup BE$ over which we explicitly minimize $g(s') + \epsilon h(s',s)$. For the purposes of this sketch, assume $w\le\epsilon$. As we saw when discussing wA*, $g(s) + f(s') - f(s) \le g(s') + \epsilon h(s',s)$ for all $s'$. Thus, if we let $\bar V = (OPEN\cup BE)\setminus V$, one valid implementation of $bound(s)$ produces 
 \[\min\left(\min_{s'\in V}\left\{g(s') + \epsilon h(s',s)\right\},\;g(s) + \min_{s'\in\bar V} \{f(s')\} - f(s)  \right).\]
 
-wA* can be seen as one instance of this general definition with $V = \emptyset$. Since $OPEN$ and $BE$ are sorted, a minimizing element of $\bar V$ is easily found. In wPA*SE, $V$ consists of the states $s'$ such that $f(s') < f(s)$. The term corresponding to $\bar V$ is trivially minimized by $s$, yielding the value $g(s)$. Nonetheless, the term corresponding to $V$ can take substantial effort for wPA*SE to compute. Since this overhead is directly proportional to the size of $V$, we prefer to make $V$ smaller without reducing the number of states which are declared safe.
+wA* can be seen as one instance of this general definition with $V = \emptyset$. Since $OPEN$ and $BE$ are sorted, a minimizing element of $\bar V$ is easily found, bypassing the need for individual consideration. In wPA*SE, $V$ consists of the states $s'$ such that $f(s') < f(s)$. The term corresponding to $\bar V$ is trivially minimized by $s$, yielding the value $g(s)$. Nonetheless, the term corresponding to $V$ can take substantial effort for wPA*SE to compute. Since this overhead is directly proportional to the size of $V$, we prefer to make $V$ smaller without reducing the number of states which are declared safe.
 
 Before doing so, we note a few optimizations which will be justified in the formal analysis. Firstly, we can replace $g$ by $g_p$ in the term $g(s') + \epsilon h(s',s)$. Since $g_p(s) \ge g(s)$, this can only make the condition $g(s) \le bound(s)$ more likely to hold, thus increasing parallelism. Likewise, if $c_l > 0$, the $\bar V$ term can be improved in accordance with Lemma \ref{lem:indep}.
 
 It remains only to choose $V$. Larger $V$ tightens (i.e. increases) the value of $bound(s)$, but increases the computational expense. In ePA*SE, we begin with $V = \{s\}$ and iteratively add elements from $OPEN\cup BE$ in order of increasing $f$-value, starting from the minimum. We continue this until we have determined with certainty whether or not $g(s) \le \min_{s'\in OPEN\cup BE}\left(g_p(s') + \epsilon h(s',s)\right)$. That is, we do the minimum possible work while ensuring the result of the check $g(s) \le bound(s)$ matches what would be obtained if $V$ were the whole frontier.
 
-$g_{front}$ is the bound computed from $V$, while $g_{back}$ is computed from $\bar V$. The former decreases and the latter increases monotonically as states $s'$ are added to $V$. The first termination condition $g_{back} \ge g(s)$ corresponds to a point after which the result of the comparison $g(s) \le bound(s)$ cannot change by growing $V$, because $g_{back} \ge g(s)$ would continue to hold thereafter and Lemma \ref{lem:indep} forbids any future elements moving from $\bar V$ to $V$ from changing the result. This is guaranteed to hold for $s' = s$, ensuring that $V$ never takes elements which would not have been considered by wPA*SE, aside from $s$. Similarly, the second termination condition $g(s) > g_{front}$ corresponds to a guarantee that $g(s) \le bound(s)$ can never hold no matter how $V$ is defined.
+$g_{front}$ is the bound computed from $V$, while $g_{back}$ is computed from $\bar V$. The former decreases and the latter increases monotonically as states $s'$ are added to $V$. The first termination condition $g_{back} \ge g(s)$ corresponds to a point after which the result of the comparison $g(s) \le bound(s)$ cannot change by growing $V$, because $g_{back} \ge g(s)$ would continue to hold thereafter and Lemma \ref{lem:indep} forbids the result from being changed by future additions to $V$. This condition always holds when $s' = s$, ensuring that $V$ never takes elements which would not have been considered by wPA*SE, aside from $s$ itself. On the other hand, if the second termination condition $g(s) > g_{front}$ is triggered, then $g(s) \le bound(s)$ can never hold no matter how $V$ is defined.
 
 Note that the nested \textbf{if} statements in the pseudocode of $g_{back}$ can be optimized away since we usually know in advance of the search whether $w \le \epsilon$, and the $s' = NULL$ case can be handled by placing a null element with $f = \infty$ at the end of $OPEN$ and $BE$. Such an element will always trigger the $g_{back} \ge g(s)$ termination condition, ensuring that we never iterate past the end of $OPEN\cup BE$.
 
-In summary, the ePA*SE implementation yields a sharper comparison than wPA*SE while doing explicit checks against no more, and often many fewer, states of the frontier. For instance, all states whose $f$-values are within $(2\epsilon-w-1)c_l$ of the minimum can be expanded in parallel, as can any set of states which wPA*SE considers safe for expansion.
+In summary, the ePA*SE expansion rule yields a sharper comparison than wPA*SE while doing explicit checks against no more, and often many fewer, states of the frontier. For instance, all states whose $f$-values are within $(2\epsilon-w-1)c_l$ of the minimum can be expanded in parallel, as can any set of states which wPA*SE considers safe for expansion.
 
 The following lemma lists some easily checked invariants of ePA*SE.
 
@@ -289,7 +291,7 @@ At all times, the following invariants hold:
 \\$g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\left\{v(s') + c(s',s)\right\}$
 \item $s\in OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) < v(s)$
 \item $s\notin OPEN\cup BE\cup FROZEN \Leftrightarrow g(s) = v(s)$
-\item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ sometime since the most recent call to $thaw()$
+\item $s\in OPEN\cup CLOSED$ iff we had $g(s)<v(s)$ at some point in the past
 \end{itemize}
 \end{lemma}
 
@@ -297,7 +299,7 @@ At all times, the following invariants hold:
 Induction on time.
 \end{proof}
 
-The last line of the fourth point is a relaxation of $g(s) = \min_{s'}\{v(s') + c(s',s)\}$, an invariant often seen in sequential A* variants such as ARA*. Our relaxation allows more parallel variable assignments, such as modifying the $g$-value of a state which is undergoing expansion.
+The last line of the fourth point is a relaxation of $g(s) = \min_{s'}\{v(s') + c(s',s)\}$, an invariant often seen in sequential A* variants such as ARA*. $s'$ can be thought of as ranging over the predecessors of $s$, as $c(s',s)=\infty$ otherwise. Our relaxation allows more parallel variable assignments, such as modifying the $g$-value of a state which is presently undergoing expansion.
 
 \section{Theoretical Analysis}
 
@@ -307,7 +309,7 @@ We investigate ePA*SE beginning at the core: the $bound$ function of Algorithm \
 
 \begin{lemma}
 \label{lem:indep}
-At all times, for all states $s$ and $s'\notin \{s_{start},s\}$:
+At all times, for all states $s$, and $s'\notin \{s_{start},s\}$:
 \[g_{back}(s',s) \le g_p(s') + \epsilon h(s',s).\]
 \end{lemma}
 
@@ -342,11 +344,11 @@ Furthermore, $g(s) \le bound(s)$ iff
 \end{lemma}
 
 \begin{proof}
-By construction, $g_{front}$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for all $s'\in V$, where $V$ consists of $s$ and the states considered by the loop in $bound(s)$. Meanwhile, Lemma \ref{lem:indep} ensures that $g_{back}$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for all $s'\in \bar V$, where $\bar V = (OPEN \cup BE) \setminus V$. Therefore,
+By construction, $g_{front}$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for all $s'\in V$, where $V$ consists of $s$ along with the low $f$-valued states considered by the loop in $bound(s)$. Meanwhile, Lemma \ref{lem:indep} ensures that $g_{back}$ is bounded above by $g_p(s') + \epsilon h(s',s)$ for all $s'\in \bar V$, where $\bar V = (OPEN \cup BE) \setminus V$. Therefore,
 \[bound(s) \le \min_{s' \in OPEN \cup BE} \left\{g_p(s') + \epsilon h(s',s)\right\}.\]
-To prove the second claim, note that the loop in $bound(s)$ terminates under one of two conditions.
+To prove the second claim, note that the loop in $bound(s)$ terminates under one of two conditions before returning the value $\min(g_{front},g_{back})$.
 
-If the loop terminates because $g(s) \le g_{back}$, then by Lemma \ref{lem:indep}, $g(s) \le g_{back} \le \min_{s'\in \bar V} \left\{ g_p(s') + \epsilon h(s',s) \right\}$. Since $g_{front} = \min_{s'\in V} \left\{ g_p(s') + \epsilon h(s',s) \right\}$, it follows that $g(s) \le bound(s)$ iff $g(s) \le \min_{s'\in OPEN \cup BE} \left\{ g_p(s') + \epsilon h(s',s) \right\}$.
+If the loop terminates because $g(s) \le g_{back}$, then by Lemma \ref{lem:indep}, $g(s) \le g_{back} \le \min_{s'\in \bar V} \left\{ g_p(s') + \epsilon h(s',s) \right\}$. Since $g_{front} = \min_{s'\in V} \left\{ g_p(s') + \epsilon h(s',s) \right\}$, it follows that $g(s) \le bound(s)$ iff $g(s) \le g_{front}$ iff $g(s) \le \min_{s'\in OPEN \cup BE} \left\{ g_p(s') + \epsilon h(s',s) \right\}$.
 
 On the other hand, if the loop terminates because $g(s) > g_{front}$, then the final assignment to $g_{front}$ must correspond to a state $s'$ for which
 \[g(s) > g_p(s') + \epsilon h(s',s) = g_{front} \ge bound(s).\]
@@ -358,9 +360,11 @@ For all $s\in OPEN\cup BE$, $bound(s) \le \epsilon g^*(s)$. Hence, for all $s\in
 \end{thm}
 
 \begin{proof}
-We proceed by induction on the order in which states are expanded.
+The second statement follows from the first because expanding $s$ assigns $v(s) := g(s)$, and $g(s) \le bound(s)$ is the criterion for expansion.
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s\in OPEN\cup BE$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. Then $s_{i-1}\in CLOSED$, so the induction hypothesis states that $v(s_{i-1}) \le \epsilon g^*(s_{i-1})$. Hence by Lemma \ref{lem:prop},
+We prove the first statement by induction on time, measured by the number of expansions. $bound(s_{start}) = g^*(s_{start}) = 0$ for the purposes of the algorithm, so the theorem holds at initialization. Suppose the theorem held at all times before the most recent expansion. Then $v(s) \le \epsilon g^*(s)$ for all $s\in CLOSED$.
+
+To show that $bound(s) \le \epsilon g^*(s)$ now holds for all $s\in OPEN\cup BE$, let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s$. Choose the minimum $i$ such that $s_i\in OPEN\cup BE$. Then $s_{i-1}\in CLOSED$, so $v(s_{i-1}) \le \epsilon g^*(s_{i-1})$. By Lemma \ref{lem:prop},
 \begin{eqnarray*}
 g_p(s_i) &\le& v(s_{i-1}) + \epsilon c(s_{i-1},s_i)
 \\&\le& \epsilon g^*(s_{i-1}) + \epsilon c(s_{i-1},s_i)
@@ -376,7 +380,7 @@ Therefore, by Lemma \ref{lem:bound},
 
 \begin{cor}
 \label{cor:subopt}
-At the end of ePA*SE, the path obtained by following the back-pointers $bp(\cdot)$ from $s_{goal}$ to $s_{start}$ is an $\epsilon$-suboptimal solution.
+At the end of ePA*SE, the path obtained by following the back-pointers $bp(\cdot)$ from $s_{goal}$ back to $s_{start}$ is an $\epsilon$-optimal solution.
 \end{cor}
 
 \begin{proof}
@@ -385,21 +389,22 @@ The termination condition of the search is $g(s_{goal}) \le bound(s_{goal})$. By
 
 \subsection{Completeness}
 
-Having shown correctness of the algorithm at termination, it only remains to show that ePA*SE indeed terminates. This is trivial on finite graphs, but we can also say something about a class of infinite graphs. The proof appears in the extended version of this paper.
+Having shown correctness of the algorithm at termination, it only remains to show that ePA*SE indeed terminates. This is a trivial fact on finite graphs, but we can also say something about a class of infinite graphs.
 
 \begin{thm}
 \label{thm:complete}
-ePA*SE terminates in finite time, provided $w$, $g^*(s_{goal})$ and the out-degrees of states are all finite, and $c_l > 0$.
+ePA*SE terminates in finite time, provided that $w$, $g^*(s_{goal})$ and the out-degrees of states are all finite, and $c_l > 0$.
 \end{thm}
 
 \begin{proof}
 
-Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s_{goal}$. At any fixed time in the algorithm's operation, let $i$ be maximal such that $g(s_i)<\infty$ and $g(s_i)\le\epsilon g^*(s_i)$. We will prove that $s_i$ is eventually expanded. Since expanding $s_i$ ensures $g(s_{i+1})\le \epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, it then follows by mathematical induction that $g(s_{goal})$ eventually attains a finite value not exceeding $\epsilon g^*(s_{goal})$.
+Let $\pi = \langle s_0,s_1,\ldots,s_N \rangle$ be a minimum-cost path from $s_0 = s_{start}$ to $s_N = s_{goal}$. At any fixed time in the algorithm's operation, let $i$ be maximal such that $g(s_i)<\infty$ and $g(s_i)\le\epsilon g^*(s_i)$. We will prove that $s_i$ is eventually expanded. Since expanding $s_i$ ensures that $g(s_{i+1})\le \epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, it then follows by mathematical induction that $g(s_{goal})$ eventually attains a finite value not exceeding $\epsilon g^*(s_{goal})$.
 
-First, suppose for contradiction that $v(s_i)\le \epsilon g^*(s_i)$. Then by Lemma \ref{lem:prop}, $g(s_{i+1}) \le v(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, in contradiction to our construction of $i$. Thus, we must have $g(s_i)\le\epsilon g^*(s_i)<v(s_i)$, which by Lemma \ref{lem:prop} and Theorem \ref{thm:subopt} implies $s_i\in OPEN$. Let $\alpha = \min(w,\epsilon)$ and
-\[C = \frac w\alpha \left( v(s_i) + c(s_i, s_{i+1}) \right) + wh(s_{i+1}, s_N).\]
+First, suppose for contradiction that $v(s_i)\le \epsilon g^*(s_i)$. Then by Lemma \ref{lem:prop}, $g(s_{i+1}) \le v(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_i)+c(s_i,s_{i+1})\le\epsilon g^*(s_{i+1})$, in contradiction to our choice of $i$. Thus, we must have $g(s_i)\le\epsilon g^*(s_i)<v(s_i)$, which by Lemma \ref{lem:prop} implies $s_i\in OPEN\cup BE\cup FROZEN$. By Theorem \ref{thm:subopt}, $s_i\notin CLOSED$, so $s_i\in OPEN$. Let $\alpha = \min(w,\epsilon)$. If $w=0$, the indeterminate fraction $\frac w\alpha$ is treated as $1$.
 
-Once $s_i$ is expanded, $C$ is hereafter a constant. If we define $f_\alpha(s) = g(s) + \alpha h(s)$ and fix an $s\in OPEN\cup BE$ with minimum $f_\alpha$-value, then $s$ is safe for expansion. Now, $f(s) \le \frac w\alpha f_\alpha(s) \le \frac w\alpha f_\alpha(s_i) \le C$. Consider the set of states with $f$-value at most $C$. Since $s$ is safe for expansion, and states in $OPEN\cup BE$ are considered in order of increasing $f$, it must be the case that either some state in this set is currently being expanded,  or the next state to be selected for expansion will be in this set. To show that $s_i$ is eventually expanded, it now suffices to show that this set is finite.
+If we define $f_\alpha(s) = g(s) + \alpha h(s,s_{goal})$ and fix an $s\in OPEN\cup BE$ with minimum $f_\alpha$-value, then $s$ is safe for expansion. Now, $f(s) \le \frac w\alpha f_\alpha(s) \le \frac w\alpha f_\alpha(s_i) \le \frac w\alpha f(s_i)$. Note that $\frac w\alpha f(s_i)$ is finite and non-increasing; let $C$ be its present value.
+
+Consider the set of states with $f$-value at most $C$. Since $s$ is safe for expansion, and states in $OPEN\cup BE$ are considered in order of increasing $f$, it must be the case that either some state in this set is currently being expanded,  or the next state to be selected for expansion will be in this set. To show that $s_i$ is eventually expanded, it now suffices to show that this set is finite.
 
 Each edge costs at least $c_l$, so any state $s$ which is separated from $s_{start}$ by more than $C/c_l$ edges must have $f(s) \ge g(s) > C$. Having bounded the depth at which the set of states $s$ satisfying $f(s) \le C$ may appear, finite out-degrees imply this set must have finite size.
 
@@ -408,11 +413,11 @@ To summarize, in finite time we obtain $f(s_{goal}) = g(s_{goal}) \le \epsilon g
 
 \subsection{Asymptotic Time Complexity}
 
-To get a sense for the increased parallelism of ePA*SE, we analyze its worst-case time complexity in the limit where an unbounded supply of processors are available, the goal state is far from the start, and $w \le \epsilon$. To simplify matters, we consider a ``blind" version of ePA*SE which considers only the frontmost state $s\in OPEN$ and in which, if the while loop condition of Algorithm \ref{alg:eaux} succeeds, $s$ is immediately deemed unsafe for expansion. This effectively removes the while loop. 
+To get a sense for the increased parallelism of ePA*SE, we analyze its worst-case time complexity in the limit where an unbounded supply of processors are available, the goal state is far from the start, and $w \le \epsilon$. To simplify matters, we consider a myopic version of ePA*SE which considers only the frontmost state $s\in OPEN$ and in which, if the while loop condition of Algorithm \ref{alg:eaux} succeeds once, $s$ is immediately deemed unsafe for expansion. This effectively erases the while loop. 
 
-If $|OPEN|$ is the frontier size, $|BE|$ is the number of states deemed simultaneously safe for expansion, and $D$ is the maximum out-degree of a state, then having each of $|BE|$ threads simultanously expand one node from the frontier now takes $O\left((|BE|+D)\log|OPEN|\right)$ time. Since any state deemed safe by Blind ePA*SE can be extracted just as quickly by ePA*SE, any performance guarantees we prove here will also apply to ePA*SE.
+If $|OPEN|$ is the frontier size, $|BE|$ is the number of states deemed simultaneously safe for expansion, and $D$ is the maximum out-degree of a state, then having each of $|BE|$ threads concurrently expand one state from the frontier now takes $O\left((|BE|+D)\log|OPEN|\right)$ time. Let one \textbf{parallel expansion time (PET) unit} be the time needed for every thread to concurrently extract and expand a state, unless the myopic safety check fails in which case they expand nothing. Since any state deemed safe by myopic ePA*SE can be extracted just as quickly by regular ePA*SE (with the while loop terminating at iteration zero), any performance guarantees we prove here will also apply to ePA*SE.
 
-Let one \textbf{parallel expansion time (PET) unit} be the time needed for all threads to simultaneously extract and expand one state, unless the blind safety check fails in which case they expand nothing. Algorithm \ref{alg:eaux} (and its blind variant) declares all states with $f$-value deviating by no more than $(2\epsilon-w-1)c_l$ safe for expansion, so they are all expanded in a single PET. In such a setting, the following bound applies:
+Algorithm \ref{alg:eaux} (and its myopic variant) declares all states with $f$-value deviating by no more than $(2\epsilon-w-1)c_l$ from the minimum safe for expansion, so they are all expanded in a single PET. In such a setting, the following bound applies:
 
 \begin{thm}
 \label{thm:depth}
@@ -422,7 +427,7 @@ If $w \le 1$, ePA*SE completes in at most
 \end{thm}
 
 \begin{proof}
-We prove the two bounds separately. For the first, note that if the minimum $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can be expanded simultaneously. Since $h$ is consistent, the successors' $f$-values are at least $f_{min} + (1-w)c_l$. Hence, one PET increases $f_{min}$ by at least $(1-w)c_l$. When $s_{goal}$ is expanded, $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. Since $f_{min}$ is initially $f(s_{start}) = h(s_{start}) \ge 0$, it suffices to take
+We prove the two bounds separately. For the first, note that if the minimum $f$-value is $f_{min}$, every state with $f$-value up to $f_{min} + (2\epsilon-w-1)c_l$ can be expanded concurrently. Since $h$ is consistent, the successors' $f$-values are at least $f_{min} + (1-w)c_l$. Hence, one PET increases $f_{min}$ by at least $(1-w)c_l$. When $s_{goal}$ is expanded, $f(s_{goal}) = g(s_{goal}) \le \epsilon g^*(s_{goal})$. Since $f_{min}$ is initially $f(s_{start}) = h(s_{start}) \ge 0$, it suffices to take
 \[\frac{\epsilon g^*(s_{goal})}{(1-w)c_l}\text{ PETs.}\]
 
 For the other bound, let $t=2\epsilon-w-1$. Since $f$-values never decrease along paths, once the minimum $f$-value in $OPEN$ surpasses $f_{min}$, from then on all states with $f$-value up to $f_{min} + tc_l$ are always safe for expansion.
@@ -436,11 +441,11 @@ With each subsequent time step, states with $f$-value up to $f_{min} + tc_l$ hav
 \end{eqnarray*}
 \end{proof}
 
-Thus, if we ignore factors hidden in the PET unit, the worst-case time complexity of ePA*SE is roughly linear in the goal distance when $w$ is considerably smaller than 1, and becomes quadratic as $w \rightarrow 1$. Compare this against the exponential complexity of sequential search. This result suggests that using $w < \epsilon$ might become favorable as upcoming technological developments raise the supply of processor cores. The case $w = 0$ completely ignores the heuristic-to-goal, yielding a parallel anytime algorithm for the classic  single-source shortest paths problem.
+Thus, if we ignore factors hidden in the PET unit, the worst-case time complexity of ePA*SE is roughly linear in the goal distance when $w$ is considerably smaller than 1, and becomes quadratic as $w \rightarrow 1$. Compare this against the exponential complexity of sequential search. This result suggests that using $w < \epsilon$ might become favorable as upcoming technological developments raise the supply of processor cores. The case $w = 0$ completely ignores the heuristic-to-goal, yielding a parallel algorithm for the classic  single-source shortest paths problem.
 
-Finally, the case $w > \epsilon$ merits future investigation as it allows a greedier bias in the frontier ordering, without loosening the suboptimality guarantee. While we de not recommend it in practice as it demands extensive checking during state extraction, it may be worthwhile if expansion times are especially long. Furthermore, we gain usable information from the additional checks, as the tightened result of $bound(s)$ propagates via $g_p$. The $w = \infty$ extreme corresponds to sorting by $h$-value. Indeed, if we are willing to check against all of $OPEN\cup BE$, then arbitrary orderings on $OPEN$ and $BE$ become permissible, but at the price of the completeness promised by Theorem \ref{thm:complete}.
+Finally, the case $w > \epsilon$ merits future investigation as it allows a greedier bias in the frontier ordering, without loosening the suboptimality guarantee. We do not recommend this in practice, as it demands extensive checking during state extraction; indeed, the first element is no longer guaranteed safe for expansion. However, it might be worthwhile if expansion times are especially long. Furthermore, we gain usable information from the additional checks, as the tightened result of $bound(s)$ propagates via $g_p$. The $w = \infty$ extreme corresponds to sorting by $h$-value. Indeed, if we are willing to check against all of $OPEN\cup BE$, then arbitrary orderings on $OPEN$ and $BE$ become permissible, but at the price of the completeness promised by Theorem \ref{thm:complete}.
 
-Finally, suppose that in place of the minimum cost $c_l$, we are given an estimate $c_m$ of the mean edge cost along a solution. Taking inspiration from \cite{klein1997randomized}, we ``grow" the small edges by a length not exceeding $\delta = (\alpha-1)c_m$ where $\alpha$ is the desired suboptimality bound. We then run ePA*SE with the bound $c_l' = c_l+\delta$, costs $c'(s,s') = \max(c(s,s'), c_l')$, and heuristic $h'(s,s') = \max(h(s,s'), c_l')$. The resulting search satisfies a bound analoguous to Theorem \ref{thm:depth}, even if $c_l=0$.
+Finally, suppose that in place of the minimum cost $c_l$, we are given an estimate $c_m$ of the mean edge cost along an optimal solution. Taking inspiration from \cite{klein1997randomized}, we ``grow" the small edges by a length not exceeding $\delta = (\alpha-1)c_m$ where $\alpha$ is the desired suboptimality bound. We then run ePA*SE with the bound $c_l' = c_l+\delta$, costs $c'(s,s') = \max(c(s,s'), c_l')$, and heuristic $h'(s,s') = \max(h(s,s'), c_l')$. The resulting search satisfies a bound analoguous to Theorem \ref{thm:depth}, even if $c_l=0$.
 
 \begin{thm}
 \label{thm:delta}
@@ -460,35 +465,43 @@ If, in addition, $c_m \ge g^*(s_{goal})/(mk(s_{goal}))$, this method takes at mo
 \[\frac{\alpha mk(s_{goal})}{(1-w)(\alpha-1)}\text{ PETs.}\]
 \end{cor}
 
-In other words, if $\alpha$ is far from $1$ and we know the mean edge cost up to a small constant factor, we can find approximately optimal paths within a small time factor of the ``omnicient" algorithm that expands only along the optimal path.
+In other words, if $\alpha$ is far from $1$ and we know the mean edge cost up to a small constant factor, we can find approximately optimal paths within a small time factor of (albeit using way more cores than) the ``omnicient" algorithm that expands only along the optimal path.
+
+While every result in this section requires $w\le 1$, in practice we expect to do better with larger values up to $\epsilon$. An intuitive justification for this is that a conservative consistent heuristic $h$ may underestimate most distances by a factor of about $\epsilon$. Thus, $\epsilon h$ is ``almost consistent" in a sense. If a larger weight succeeds in focusing the search toward the goal, the search may complete quickly without needing unreasonably many cores. Local minima remain a problem in places where the heuristic is less informed, though the generalized expansion rule might occasionally offer opportunities to escape by expanding at non-minimal $f$-values.
 
 \section{Experiments}
 
-We tested wPA*SE and ePA*SE with parameters $w=\epsilon=1.5$ on a 2D grid domain with 8-connected cells. We used the same 20 maps as \cite{phillips2014pa} from a commonly used pathfinding benchmark \cite{sturtevant2012benchmarks}. The searches were run on an Amazon EC2 machine with a 32-core Intel Xeon E5-2680v2.
+In order to sample the performance of ePA*SE and compare it against wA* and wPA*SE, we used a basic 2D grid domain with 8-connected cells. The natural value for $c_l$ here is the distance between orthogonally adjacent cells; diagonally adjacent cells cost $\sqrt 2$ times as much to reach. We used the same 20 maps as \cite{phillips2014pa} from a commonly used pathfinding benchmark \cite{sturtevant2012benchmarks}. The searches were run on a single Amazon EC2 machine with a 32-core Intel Xeon E5-2680v2 CPU.
 
-In the first set of experiments, we varied the time per expansion between $10^{-6}$, $10^{-5}$ and $10^{-4}$ seconds, and the number of threads between 1, 2, 4, 8, 16, 24 and 32. For each of these settings, Figure \ref{fig:time} displays the average speedup factor: the time taken by a sequential wA* search divided by the time taken by wPA*SE or ePA*SE. We observe moderate gains over wPA*SE as the number of cores increases, especially when expansion times are fairly fast. However, although ePA*SE demonstrates greater parallelism than wPA*SE, both algorithms falter when the number of threads is too high. This seems to be due to the fact that the data structure locks ensure only one thread can work on state extraction at a time. If the number of threads is high, some expansions finish before a new state is extracted, so the threads never become saturated, resulting in needless overhead. To achieve greater parallelism, it may become necessary to parallelize the extraction process so that multiple threads can access the frontier simultaneously.
+In the first set of experiments, wPA*SE and ePA*SE were run with parameters $w=\epsilon=1.5$. Each expansion took a fixed length of time per outgoing edge. This time was set to $10^{-6}$, $10^{-5}$ and $10^{-4}$ seconds, and the number of threads varied between 1, 2, 4, 8, 16, 24 and 32. For each of these settings, Figure \ref{fig:time} plots the mean speedup factor: the total time taken by sequential wA* (using the same expansion time setting) divided by the time taken by wPA*SE or ePA*SE.
 
-In the second set of experiments, we varied the time per expansion between $10^{-5}$ and $10^{-4}$ seconds, and the weight parameters $w=\epsilon$ between 1.1, 1,5, 2, 3 and 4. Figure \ref{fig:eps} displays the speedup factor for each setting in a similar format. We observe that ePA*SE achieves very high gains when the weight is low, gradually dissipating as the weight increases. In particular, when the weight is close to 1, the speedup over sequential search is approximately linear in the number of processors. ePA*SE is found to perform at least as well as the tested competitors in all cases, and considerably better in some classes of scenarios.
+We observe appreciable gains over wPA*SE as the number of cores increases, especially when expansion times are fairly fast, approaching a further two-fold improvement with 24 threads. Although ePA*SE demonstrates greater parallelism than wPA*SE, both algorithms falter when the number of threads is very high. This seems to be due to the data structure locks ensuring only one thread can work on state extraction at a time. If the number of threads is high and expansion time is low, some expansions finish before a new state is extracted, so the threads never become saturated, resulting in needless overhead. To achieve greater parallelism, it would be useful to parallelize the extraction process so that multiple threads can access the frontier simultaneously.
 
-\begin{figure}[fig:time]
-\centering\includegraphics[scale=0.55]{time_sweep_all.png}
+In the second set of experiments, we set the expansion time to $10^{-5}$ and $10^{-4}$ seconds, and the weight parameters $w=\epsilon$ to 1.1, 1,5, 2, 3 and 4. Figure \ref{fig:eps} displays the speedup factor for each setting in a similar format. We observe that ePA*SE achieves very high gains when the weight is low, gradually dissipating as the weight increases. In particular, when the weight is close to 1, the speedup over sequential search is approximately linear in the number of processors, and occasionally even better. Superlinear speedup is possible because ePA*SE expands a different set of states; in particular, the additional parallelism granted by its expansion rule may lead to alternative paths out of a local minimum.
+
+The decreased parallelism for high weights can be attributed to corresponding changes in frontier shape: when $w$ is small, the frontier is wide, almost like in a breadth-first search. Many states on the frontier have largely independent paths from the start state, and can be expanded concurrently. In stark contrast, a search with high weight will focus the frontier narrowly toward the goal, resembling a depth-first search. This will typically reach the goal sooner, but allows little room for division of labor between threads.
+
+\begin{figure}
+\centering\includegraphics[scale=0.55]{time_sweep_para.png}
 \caption{2D grid speedup as the number of threads and expansion time are varied.}
+\label{fig:time}
 \end{figure}
 
-\begin{figure}[fig:tps]
+\begin{figure}
 \centering\includegraphics[scale=0.55]{eps_sweep_para.png}
 \caption{2D grid speedup as the weight parameter and expansion time are varied.}
+\label{fig:eps}
 \end{figure}
 
-\section{Future Work}
+\section{Conclusions and Extensions}
 
-Anytime, dynamic, overcome local minima with alternative expansion orderings satisfying the ePA*SE rule, use multiple queues to overcome parallelism bottleneck.
+We have presented a framework which unifies wA* and wPA*SE, differentiating them primarily by expansion rule. Within this framework, we created ePA*SE and proved it maintains the completeness and guaranteed bounded suboptimality of wPA*SE, with additional complexity theoretic bounds in the limit of massive parallelism, and demonstrated empirical gains in performance.
 
-\section{Conclusion}
+This work's main contribution is the development and analysis of frontier expansion rules for A*-like searches. ePA*SE uses our most general rule to gain parallelism. However, we believe this rule will prove itself useful in other ways, even in the sequential setting. By providing a larger set of states that are safe for expansion, it becomes possible to specify a different algorithm to choose among them while maintaining the guarantee of $\epsilon$-optimality. In particular, a randomized selection process could be used to nudge the search out of local optima which would otherwise waste a lot of time.
 
-We have presented a framework which unifies wA* and wPA*SE, differentiating them primarily by expansion rule. Within this framework, we created ePA*SE and proved it maintains the completeness and guaranteed bounded suboptimality of wPA*SE, with additional performance bounds in the limit of massive parallelism. We showed experimental gains in performance, presented an anytime variant, and discussed the role of decoupling the weight parameter from the suboptimality factor.
+For ePA*SE in particular, many possible extensions remain. An anytime algorithm can be developed by ``thawing" out the $FROZEN$ list upon finding a solution, resuming the search with a smaller $\epsilon$. We would also like to be able to handle dynamic graphs, where edge costs may change, without replanning from scratch. There are other algorithms which do this, such as the sequential AD* \cite{likhachev2005anytime}, but we are aware of no parallel algorithms that match our theoretical guarantees. While we briefly discussed the role of decoupling the weight parameter $w$ from the suboptimality factor $\epsilon$, the application of $w \ne \epsilon$ to various settings also merits a detailed empirical investigation.
 
-Future work remains to experimentally investigate the effect of using $w \ne \epsilon$ under various settings. The bottleneck of ePA*SE appears to be the fact that only one thread at a time can access the data structures to extract states. While prior work includes techniques for splitting the frontier for parallel access, none so far have all the theoretical benefits we showed for ePA*SE.
+Finally, based on our experiments, we believe the main performance bottleneck remaining in ePA*SE is in restricting access to the main data structures to one thread at a time: although expansions can take place concurrently, idle threads must wait their turn to acquire a safe state to expand. While prior work includes techniques for splitting the frontier for parallel access, none so far have all the theoretical benefits we showed for ePA*SE. It would be an interesting challenge to develop a means for parallel state extraction that respects the ePA*SE expansion rule. One could even consider sorting each queue using a different consistent heuristic.
 
 \bibliographystyle{aaai}
 \bibliography{PAPA}
