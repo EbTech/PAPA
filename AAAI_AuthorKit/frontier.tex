@@ -52,7 +52,7 @@ On the experimental side, we match the runtime of wPA*SE when expansions are ver
 
 \section{Introduction}
 
-Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the order by which states are selected from the frontier for expansion. In the weighted A* (wA*) algorithm, the choice combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which ensures suboptimality bounded by a specified factor. When provided with a consistent heuristic, wA* takes care to expand a state only after finding an approximately optimal path reaching it. Thus, wA* can guarantee approximate optimality without ever re-expanding a state.
+Breadth-first and depth-first search are generalized by a class of frontier-based search algorithms, differing mainly in the order by which states are selected from the frontier for expansion. In the weighted A* (wA*) algorithm, the selection combines a greedy goal-directed bias to reduce search time, with a breadth-first bias which ensures suboptimality bounded by a specified factor. When provided with a consistent heuristic, wA* takes care to expand a state only after finding an approximately optimal path reaching it. Thus, wA* can guarantee approximate optimality without ever re-expanding a state.
 
 With the advent of multi-core processors, making use of parallelism has become a priority for algorithm designers. Parallel A* for Slow Expansions (PA*SE) \cite{phillips2014pa}, and its weighted generalization wPA*SE, offer nearly linear speedup in the number of cores, provided the search time is dominated by time-consuming expansions. Among parallel algorithms for graph search, wPA*SE stands out for meeting the same theoretical guarantee as wA*: approximate optimality without repeated expansions.
 
@@ -92,34 +92,36 @@ We wish to find approximate single-pair shortest-paths. That is, given a directe
 
 We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
 
-\section{Algorithm Design}
+\section{Searching with Expansion Rules}
 
 \subsection{A parallel view of wA*}
 
-Many A* variants work by maintaining a set of upper bound estimates $g(s)$ of the optimal cost $g^*(s) = c^*(s_{start},s)$ of reaching $s$ from $s_{start}$. The estimates are constructive: every state $s$ in the search tree has a back-pointers $bp(s)$, and these can be followed back from $s$ to $s_{start}$ to yield a path whose cost is at most $g(s)$.
+Many A* variants work by maintaining a set of upper bound estimates $g(s)$ of the optimal cost $g^*(s) = c^*(s_{start},s)$ of reaching $s$ from $s_{start}$. The estimates are constructive: every state $s$ in the search tree has a back-pointer $bp(s)$, and these can be followed back from $s$ to $s_{start}$ to yield a path whose cost is at most $g(s)$.
 
-In hopes of avoiding duplicate effort, the A* variants we consider are designed to expand each state at most once. Thus, before expanding $s$, it's important to verify that we already have a path from $s_{start}$ to $s$ satisfying the desired suboptimality bound. Formally, we say a state $s$ is \textbf{safe for expansion} once we have deduced that $g(s) \le \epsilon g^*(s)$.
+In order to avoid duplicate effort, we consider our search algorithm to expand no state more than once. Thus, before expanding $s$, it is essential to verify that we already have a path from $s_{start}$ to $s$ satisfying the desired suboptimality bound. Formally, we say a state $s$ is \textbf{safe for expansion} once we have deduced that $g(s) \le \epsilon g^*(s)$. An \textbf{expansion rule} is a criterion that can be applied on any state $s$ on the search frontier to check whether it is safe for expansion .
 
-Since we do not know $g^*(s)$ in practice, our general framework takes some easily computable function $bound(s)$ to act as a lower bound on $\epsilon g^*(s)$. wA* sorts the frontier by the numeric keys $f(s) = g(s) + \epsilon h(s,s_{goal})$, which can be used to compute $bound(s) = g(s) + f(s') - f(s)$ where $s'$ is a state with minimum $f$-value among all frontier states. Now,
+Since we do not know $g^*(s)$ in practice, our general framework takes some easily computable function $bound(s)$ to act as a lower bound on $\epsilon g^*(s)$. wA* sorts the frontier by the numeric keys $f(s) = g(s) + \epsilon h(s,s_{goal})$, which can be used to compute $g(s) + f(s') - f(s)$ where $s'$ is a frontier state with minimum $f$-value. If we take $bound(s)$ to be the latter expression, then
 \begin{eqnarray*}
 bound(s) &=& g(s) + \min_{s'}\{f(s')\} - f(s)
 \\&=& \min_{s'}\{g(s) + f(s') - f(s)\}
 \\&=& \min_{s'}\{g(s') + \epsilon\left(h(s',s_{goal}) - h(s,s_{goal})\right)\}
 \\&\le& \min_{s'}\{g(s') + \epsilon h(s',s)\}
 \end{eqnarray*}
-where each $\min$ ranges over the frontier.
+where each $\min$ ranges over the search frontier.
 
-Provided $s$ is in the frontier, it can be shown the latter expression is at most $\epsilon g^*(s)$ \cite{WA}. Therefore, $s$ is considered safe for expansion if $g(s) \le bound(s)$. Substituting in the definition of $bound(s)$, the latter inequality reduces to $0 \le \min_{s'}\{f(s')\} - f(s)$. That is, $s$ must have the minimum $f$-value of the frontier. This can be stated as a principle:
+Let $s'$ be the first state on the optimal path from $s_{start}$ to $s$ which lies on the search frontier. Assuming the predecessor of $s'$ along that path was expanded with an $\epsilon$-optimal $g$-value, then we also have $g(s') \le \epsilon g^*(s')$. Thus,
+\[bound(s) \le \epsilon (g^*(s') + h(s',s)) \le \epsilon g^*(s).\]
+Therefore, $s$ is considered safe for expansion if $g(s) \le bound(s)$. Substituting in the definition of $bound(s)$, the latter inequality reduces to $0 \le \min_{s'}\{f(s')\} - f(s)$. That is, $s$ must have the smallest $f$-value on the frontier. This can be stated as a principle:
 
 \begin{rul}[wA* rule]
-A state $s\in OPEN$ is safe for expansion if its $f$-value is minimal among states in the frontier.
+A state $s$ is safe for expansion if its $f$-value is minimal among states in the search frontier.
 \end{rul}
 
-Already, this grants a trivial degree of parallelism: if multiple states have the same minimal $f$-value, they can be expanded simultaneously. The main contribution of wPA*SE was to generalize this principle, deducing more states as simultaneously safe for expansion.
+Already, this rule grants a trivial degree of parallelism: if multiple states share the minimum $f$-value, they can be expanded simultaneously. The main contribution of wPA*SE was to generalize this principle, deducing many more states as simultaneously safe for expansion. After reviewing wPA*SE, we will present an even more general rule and show how to compute it efficiently.
 
 \subsection{Review of wPA*SE}
 
-Before describing how wPA*SE generalizes the wA* rule for safe expansion, let's outline the entire search algorithm in more detail. Our presentation of wPA*SE differs slightly from the original version in \cite{phillips2014pa}, but the algorithm we describe is essentially equivalent. Algorithm \ref{alg:main} is a skeleton for wPA*SE. It begins by clearing the data structures and expanding out all edges coming from the start state.
+Before describing how wPA*SE generalizes the wA* rule for safe expansion, let's outline the entire search algorithm in more detail. Due to our focus on expansion rules, our presentation of wPA*SE differs slightly from the original version in \cite{phillips2014pa}, but the algorithm we describe is essentially equivalent. Algorithm \ref{alg:main} is a skeleton for wPA*SE. It begins by clearing the data structures and expanding the start state.
 
 Intuitively, $OPEN$ represents the frontier of states which are candidates for expansion, initially consisting of the direct successors of $s_{start}$. Once a safe state is identified and selected for expansion, it's removed from $OPEN$ and inserted into the $CLOSED$ and $BE$ (Being Expanded) lists. $BE$ represents the freshly $CLOSED$ states: they are still in the process of being expanded, but are about to leave the frontier. Its cardinality $|BE|$ will never exceed the number of threads.
 
@@ -129,7 +131,7 @@ A state $s\in OPEN$ can only be extracted if it is safe for expansion, i.e. $g(s
 
 The assignable variables $v(s)$ and the $FROZEN$ list are never used, and exist in the pseudocode only to aid the analysis. Intuitively, $v(s)$ is the distance label held by $s$ during its most recent expansion. If $g(s) < v(s)$, $s$ should be a candidate for future expansion. $FROZEN$ consists of $CLOSED$ states for which $g(s) < v(s)$, and hence would be candidates for expansion if not for the fact that $s$ was already expanded. Thus, $OPEN\cup BE\cup FROZEN$ is precisely the set of states $s$ for which $g(s) < v(s)$. All other states have $g(s) = v(s)$.
 
-There are many valid functions that can take the place of $bound(s)$; correctness (i.e. soundness) only requires $bound(s) \le \epsilon g^*(s)$, while termination (i.e. completeness) takes a little more care (see Theorem \ref{thm:complete}). As discussed in the previous section, we obtain a trivially parallelized version of wA* by using $bound(s) = g(s) + f(s') - f(s)$ for the minimizing $s'\in OPEN \cup BE$. wPA*SE uses the substantially tighter $bound$ computed by Algorithm \ref{alg:aux}.
+There are many valid functions that can take the place of $bound(s)$; correctness (i.e. soundness) only requires $bound(s) \le \epsilon g^*(s)$, while termination (i.e. completeness) takes a little more care (see Theorem \ref{thm:complete}). As discussed in the previous section, we obtain a trivially parallelized version of wA* by setting $bound(s) = g(s) + f(s') - f(s)$ with the minimizing $s'\in OPEN \cup BE$. wPA*SE uses the substantially tighter $bound$ as computed by Algorithm \ref{alg:aux}.
 
 \begin{rul}[wPA*SE rule]
 A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
@@ -174,8 +176,9 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
 \IF{$s'$ has not been generated yet}
-\STATE $g(s') := v(s') := \infty$
+\STATE $g(s') := v(s') := g_p(s') = \infty$
 \ENDIF
+\STATE $g_p(s') := \min(g_p(s'),\,bound(s) + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
 \STATE $g(s') = g(s) + c(s,s')$
 \STATE $bp(s') = s$
@@ -190,12 +193,11 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 \end{algorithmic}
 \end{algorithm}
 
-To sketch the intuition behind this implementation, we argue that in order for $s\in OPEN$ to be unsafe for expansion, there must be an optimal path from $s_{start}$ to $s$ passing through some safe $s'\in OPEN\cup BE$. Thus,
-\[g(s) > \epsilon g^*(s) = \epsilon g^*(s') + \epsilon c^*(s',s) \ge g(s') + \epsilon h(s',s).\]
+Our analysis of wA* really showed that, for $s$ to be safe, it suffices that $g(s) \le g(s') + \epsilon h(s', s)$ for all $s'\in OPEN\cup BE$. Assuming $w \le \epsilon$, this inequality is guaranteed to hold whenever $f(s') \ge f(s)$. Hence, it suffices to check it for all $s'$ for which $f(s') < f(s)$, as Algorithm \ref{alg:aux} does.
 
-For $s$ to be safe, then, it suffices that $g(s) \le g(s') + \epsilon h(s', s)$ for all $s'\in OPEN\cup BE$. Assuming $w \le \epsilon$, this inequality is guaranteed to hold whenever $f(s') \ge f(s)$. Hence, it suffices to check it for all $s'$ for which $f(s') < f(s)$. These checks are expensive, their cost per state being proportional to the number $|BE|$ of states undergoing simultaenous expansion. The principal aim of our extensions is to substantially reduce the number of checks needed while increasing parallelism.
+These checks are expensive, their cost per state being proportional to the number $|BE|$ of states undergoing simultaenous expansion. The principal aim of our extensions is to substantially reduce the number of checks needed while increasing parallelism.
 
-Before continuing, we briefly note that atomic locks are used for concurrency. For conceptual clarity, the mechanism presented here is considerably simpler than our C++ implementation. We will not discuss details here, but it bears mentioning that every use of the main data structures is guarded by the same global lock. Where locks are used to group consecutive operations into a single atomic operation, we may treat the corresponding lines of code as simultaneous in the analysis. For example, a state is removed from $OPEN$ at the same time as it gets inserted into $CLOSED$ and $BE$.
+Before continuing, we briefly remark that atomic locks are used for concurrency. For conceptual clarity, the mechanism presented here is considerably simpler than our C++ implementation. We will not discuss details here, but it bears mentioning that every use of the main data structures is guarded by the same global lock. Where locks are used to group consecutive operations into a single atomic operation, we may treat the corresponding lines of code as simultaneous in the analysis. For example, a state is removed from $OPEN$ at effectively the same time as it gets inserted into $CLOSED$ and $BE$.
 
 \begin{algorithm}
 \caption{Auxiliary Functions}
@@ -222,14 +224,14 @@ Before continuing, we briefly note that atomic locks are used for concurrency. F
 
 Having formulated wPA*SE in a convenient new framework, we are now prepared to present our extensions.
 
-We introduce the assignable variables $g_p(s)$. Their semantics are related to $g(s)$ and $bound(s)$ with subtle alterations. While $bound(s)/\epsilon$ is a lower bound on unrestricted distance $g^*(s)$ from $s_{start}$ to $s$, $g_p(s)/\epsilon$ is a lower bound on the cost of $s_{start}$-to-$s$ paths in which $s$ is immediately preceded by a $CLOSED$ state. That is, $g_p(s) \le \epsilon (g^*(s') + c(s',s))$ for all $s'\in CLOSED$. To maintain this invariant, $expand(s)$ should initialize $g_p$ to $\infty$ just as it does for $g$ and $v$, and then make the following assignment immediately before the second \textbf{if} statement of $expand(s)$:
-\[g_p(s') := \min(g_p(s'),\; bound(s) + \epsilon c(s,s'))\]
+Recall that our analysis of wA* used a frontier state $s'$ on the optimal path from $s_{start}$ to $s$. The predecessor of $s'$ was expanded with an $\epsilon$-optimal $g$-value, so $g(s')$ (and hence $g(s)$) are \textit{better} than $\epsilon$-optimal by a margin at least $\epsilon -1$ times the cost of the edge from the predecessor to $s'$.
 
-$bound(s)$ need not be called again here explicitly; it suffices to use the value computed when $s$ was selected for expansion, or $0$ if $s=s_{start}$. Note that at all times, $g(s) \le g_p(s)$.
+To estimate and make use of this margin, we introduce the variables $g_p(s)$. Their semantics are related to $g(s)$ and $bound(s)$ with subtle alterations. While $bound(s)/\epsilon$ is a lower bound on unrestricted distance $g^*(s)$ from $s_{start}$ to $s$, $g_p(s)/\epsilon$ is a lower bound on the cost of $s_{start}$-to-$s$ paths in which $s$ is immediately preceded by a previously expanded (i.e. $CLOSED$) state. That is,
+\[g_p(s) \le \epsilon (g^*(s') + c(s',s))\text{ for all }s'\in CLOSED.\] $expand(s)$ maintains this invariant; we note that instead of computing $bound(s)$ once again, it suffices to use the value computed when $s$ was selected for expansion, or $0$ if $s=s_{start}$. Note that at all times, $g(s) \le g_p(s)$.
 
 The performance gains of ePA*SE come from changing the implementation of $bound(s)$ to the version shown in Algorithm \ref{alg:eaux}. It now makes use of $g_p$ as well as a constant $c_l \ge 0$, denoting the best known lower bound on the graph's edge costs. $c_l$ can be 0 if we are agnostic about the possible costs, but ePA*SE can make use of larger bounds if available.
 
-The introduction of $g_p$ and $c_l$ increases $bound(s)$, potentially increasing the number of nodes which are simultaneously safe for expansion. As an additional benefit, safe nodes are detected more quickly when the loop terminates early: for instance, if $w \le \epsilon$ and $f(s) - f(s') \le (2\epsilon-w-1)c_l$, the loop will not consider $s'$. Provided $s$ is safe for expansion, the loop in Algorithm \ref{alg:eaux} never takes more iterations than its wPA*SE equivalent. In a later section, our analysis of this early termination property leads to Theorem \ref{thm:depth}.
+The introduction of $g_p$ and $c_l$ increases $bound(s)$, potentially increasing the number of nodes which are safe for expansion at any given time. As an additional benefit, safe nodes are detected more quickly than in wPA*SE because the loop terminates sooner: for instance, if $w \le \epsilon$ and $f(s) - f(s') \le (2\epsilon-w-1)c_l$, the loop will terminate at $s'$. Provided $s$ is safe for expansion, the loop in Algorithm \ref{alg:eaux} never takes more iterations than its wPA*SE equivalent. In a later section, our complexity theoretic analysis of this early termination property leads to Theorem \ref{thm:depth}.
 
 \begin{rul}[ePA*SE rule]
 A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:eaux}.
@@ -258,14 +260,14 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 \end{algorithmic}
 \end{algorithm}
 
-Recall that wPA*SE lower-bounds $\epsilon g^*(s)$ by the minimum of $g(s') + \epsilon h(s',s)$ among $s'\in OPEN\cup BE$. Hoever, not every element of $OPEN\cup BE$ requires individual consideration. Indeed, suppose we choose an arbitrary subset $V\subseteq OPEN\cup BE$ over which we explicitly minimize $g(s') + \epsilon h(s',s)$. For the purposes of this sketch, assume $w\le\epsilon$. As we saw when discussing wA*, $g(s) + f(s') - f(s) \le g(s') + \epsilon h(s',s)$. Thus, if we let $\bar V = (OPEN\cup BE)\setminus V$, a valid implementation of $bound(s)$ produces 
+Recall that wPA*SE lower-bounds $\epsilon g^*(s)$ by the minimum of $g(s') + \epsilon h(s',s)$ among $s'\in OPEN\cup BE$. However, not every element of $OPEN\cup BE$ requires individual consideration. Indeed, suppose we choose an arbitrary subset $V\subseteq OPEN\cup BE$ over which we explicitly minimize $g(s') + \epsilon h(s',s)$. For the purposes of this sketch, assume $w\le\epsilon$. As we saw when discussing wA*, $g(s) + f(s') - f(s) \le g(s') + \epsilon h(s',s)$ for all $s'$. Thus, if we let $\bar V = (OPEN\cup BE)\setminus V$, one valid implementation of $bound(s)$ produces 
 \[\min\left(\min_{s'\in V}\left\{g(s') + \epsilon h(s',s)\right\},\;g(s) + \min_{s'\in\bar V} \{f(s')\} - f(s)  \right).\]
 
-wA* can be seen as one instance of this general definition with $V = \emptyset$. Since $OPEN$ and $BE$ are sorted, a minimizing element of $\bar V$ is easily found. In wPA*SE, $V$ consists of the states $s'$ such that $f(s') < f(s)$. The term corresponding to $\bar V$ is trivially minimized by $s$, yielding the value $g(s)$. Nonetheless, the term corresponding to $V$ can take substantial effort to compute. Much of this effort can be removed by decreasing the size of $V$.
+wA* can be seen as one instance of this general definition with $V = \emptyset$. Since $OPEN$ and $BE$ are sorted, a minimizing element of $\bar V$ is easily found. In wPA*SE, $V$ consists of the states $s'$ such that $f(s') < f(s)$. The term corresponding to $\bar V$ is trivially minimized by $s$, yielding the value $g(s)$. Nonetheless, the term corresponding to $V$ can take substantial effort for wPA*SE to compute. Since this overhead is directly proportional to the size of $V$, we prefer to make $V$ smaller without reducing the number of states which are declared safe.
 
 Before doing so, we note a few optimizations which will be justified in the formal analysis. Firstly, we can replace $g$ by $g_p$ in the term $g(s') + \epsilon h(s',s)$. Since $g_p(s) \ge g(s)$, this can only make the condition $g(s) \le bound(s)$ more likely to hold, thus increasing parallelism. Likewise, if $c_l > 0$, the $\bar V$ term can be improved in accordance with Lemma \ref{lem:indep}.
 
-It remains only to define $V$. Larger $V$ tightens (i.e. increases) the value of $bound(s)$, but increases the computational expense. In ePA*SE, we begin with $V = \{s\}$ and iteratively add elements from $OPEN\cup BE$ in increasing order starting at the minimum $f$-value. We continue this until we have determined with certainty whether or not $g(s) \le \min_{s'\in OPEN\cup BE}\left(g_p(s') + \epsilon h(s',s)\right)$. That is, we do the minimum possible work while ensuring the result of the check $g(s) \le bound(s)$ matches what would be obtained if $V$ were the whole frontier.
+It remains only to choose $V$. Larger $V$ tightens (i.e. increases) the value of $bound(s)$, but increases the computational expense. In ePA*SE, we begin with $V = \{s\}$ and iteratively add elements from $OPEN\cup BE$ in order of increasing $f$-value, starting from the minimum. We continue this until we have determined with certainty whether or not $g(s) \le \min_{s'\in OPEN\cup BE}\left(g_p(s') + \epsilon h(s',s)\right)$. That is, we do the minimum possible work while ensuring the result of the check $g(s) \le bound(s)$ matches what would be obtained if $V$ were the whole frontier.
 
 $g_{front}$ is the bound computed from $V$, while $g_{back}$ is computed from $\bar V$. The former decreases and the latter increases monotonically as states $s'$ are added to $V$. The first termination condition $g_{back} \ge g(s)$ corresponds to a point after which the result of the comparison $g(s) \le bound(s)$ cannot change by growing $V$, because $g_{back} \ge g(s)$ would continue to hold thereafter and Lemma \ref{lem:indep} forbids any future elements moving from $\bar V$ to $V$ from changing the result. This is guaranteed to hold for $s' = s$, ensuring that $V$ never takes elements which would not have been considered by wPA*SE, aside from $s$. Similarly, the second termination condition $g(s) > g_{front}$ corresponds to a guarantee that $g(s) \le bound(s)$ can never hold no matter how $V$ is defined.
 
@@ -479,6 +481,8 @@ In the second set of experiments, we varied the time per expansion between $10^{
 \end{figure}
 
 \section{Future Work}
+
+Anytime, dynamic, overcome local minima with alternative expansion orderings satisfying the ePA*SE rule, use multiple queues to overcome parallelism bottleneck.
 
 \section{Conclusion}
 
