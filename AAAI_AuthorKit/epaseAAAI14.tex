@@ -163,8 +163,11 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 \IF{such an $s$ does not exist}
 \STATE wait until $OPEN$ or $BE$ change
 \STATE continue
+\STATE OR just go with the first $s\in OPEN$
 \ENDIF
+\IF{$g(s)\le bound(s)$}
 \STATE insert $s$ into $CLOSED$
+\ENDIF
 \IF{$v(s)\le bound(s)$}
 \STATE insert $s$ into $FROZEN$
 \ELSE
@@ -520,7 +523,7 @@ In the first set of experiments, we varied the time per expansion between $10^{-
 In the second set of experiments, we varied the time per expansion between $10^{-5}$ and $10^{-4}$ seconds, and the weight parameters $w=\epsilon$ between 1.1, 1,5, 2, 3 and 4. Figure \ref{fig:eps} displays the speedup factor for each setting in a similar format. We observe that ePA*SE achieves very high gains when the weight is low, gradually dissipating as the weight increases. In particular, when the weight is close to 1, the speedup over sequential search is approximately linear in the number of processors. ePA*SE is found to perform at least as well as the tested competitors in all cases, and considerably better in some classes of scenarios.
 
 \begin{figure}[fig:time]
-\centering\includegraphics[scale=0.55]{time_sweep_all.png}
+\centering\includegraphics[scale=0.55]{time_sweep_para.png}
 \caption{2D grid speedup as the number of threads and expansion time are varied.}
 \end{figure}
 
@@ -536,6 +539,6 @@ We have presented a framework which unifies wA* and wPA*SE, differentiating them
 Future work remains to experimentally investigate the effect of using $w \ne \epsilon$ under various settings. The bottleneck of ePA*SE appears to be the fact that only one thread at a time can access the data structures to extract states. While prior work includes techniques for splitting the frontier for parallel access, none so far have all the theoretical benefits we showed for ePA*SE.
 
 \bibliographystyle{aaai}
-\bibliography{PAPA}
+\bibliography{epase}
 
 \end{document}

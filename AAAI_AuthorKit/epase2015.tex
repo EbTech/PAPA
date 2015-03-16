@@ -84,7 +84,7 @@ By taking the quickest result, their solution quality is bounded by the worst qu
 Likewise, the preceding approaches must allow states to be re-expanded, perhaps exponentially many times, in order to guarantee bounded suboptimality.
 
 Weighted Parallel A* for Slow Expansions (wPA*SE) \cite{phillips2014pa}
-is a recent approach which, like weighted A*, expands each state at most once
+is a recent approach which expands each state at most once
 while guaranteeing a specified solution suboptimality factor. At the price of taking more time to select states for expansion, this approach reduces the total number of expansions, often improving planning times.
 In this paper, we extend wPA*SE to speed up the identification of states eligible for simultaneous expansion, while also increasing the number of eligible states.
 
@@ -92,7 +92,7 @@ In this paper, we extend wPA*SE to speed up the identification of states eligibl
 
 We wish to find approximate single-pair shortest-paths. That is, given a directed graph with non-negative edge costs $c(s,s') \ge 0$, we must identify a path from $s_{start}$ to $s_{goal}$ whose cost is at most a specified factor $\epsilon\ge 1$ of the true distance $c^*(s_{start},s_{goal})$.
 
-We assume the distances can be estimated by a \textbf{consistent heuristic} $h$, meaning $h(s,s')\le c(s,s')$ and $h(s,s')\le h(s,s'') + h(s'',s')$ for all $s,s',s''$. Of course, consistency implies \textbf{admissibility}, meaning $h(s,s')\le c^*(s,s')$.
+We assume the distances can be estimated by a \textbf{goal-consistent heuristic} $h$, meaning $h(s',s_{goal}) - h(s,s_{goal})\le h(s',s)\le c^*(s',s)$ for all $s,s'$. This is a stronger condition than admissibility, but weaker than pairing admissibility with the triangle inequality. Note that if $h_g$ is a consistent distance-to-goal estimate, then the 2-argument heuristic $h(s',s) = \max(0,\,h_g(s') - h_g(s))$ is admissible with triangle inequality.
 
 \section{Searching with Expansion Rules}
 
@@ -111,8 +111,8 @@ bound(s) &=& g(s) + \min_{s'}\{f(s')\} - f(s)
 \end{eqnarray*}
 where each $\min$ ranges over the search frontier.
 
-Let $s'$ be the first state on the optimal path from $s_{start}$ to $s$ which lies on the search frontier. Assuming the predecessor of $s'$ along that path was expanded with an $\epsilon$-optimal $g$-value, then we also have $g(s') \le \epsilon g^*(s')$. Thus,
-\[bound(s) \le \epsilon (g^*(s') + h(s',s)) \le \epsilon g^*(s).\]
+In particular, instantiate $s'$ to be the first state on the optimal path from $s_{start}$ to $s$ which lies on the search frontier. Inductively assuming the predecessor of $s'$ along that path was expanded with an $\epsilon$-optimal $g$-value, then we also have $g(s') \le \epsilon g^*(s')$. Thus,
+\[bound(s) \le g(s') + \epsilon h(s',s) \le \epsilon (g^*(s') + h(s',s)) \le \epsilon g^*(s).\]
 Therefore, $s$ is considered safe for expansion if $g(s) \le bound(s)$. Substituting in the definition of $bound(s)$, the latter inequality reduces to $0 \le \min_{s'}\{f(s')\} - f(s)$. That is, $s$ must have the smallest $f$-value on the frontier. This can be stated as a principle:
 
 \begin{rul}[wA* rule]
@@ -138,6 +138,26 @@ There are many valid functions that can take the place of $bound(s)$; correctnes
 \begin{rul}[wPA*SE rule]
 A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the implementation of $bound$ listed in Algorithm \ref{alg:aux}.
 \end{rul}
+
+\begin{algorithm}
+\caption{wA* without initialization details}
+\label{alg:wastar}
+\begin{algorithmic}
+\WHILE{$g(s_{goal}) > bound(s_{goal})$}
+\STATE remove $s\in OPEN$ with $g(s) \le bound(s)$
+\STATE insert $s$ into $CLOSED$
+\FORALL{$s' \in successors(s)$}
+\IF {$g(s') > g(s) + c(s,s')$}
+\STATE $g(s') = g(s) + c(s,s')$
+\STATE $bp(s') = s$
+\IF{$s' \notin CLOSED$}
+\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
+\ENDIF
+\ENDIF
+\ENDFOR
+\ENDWHILE
+\end{algorithmic}
+\end{algorithm}
 
 \begin{algorithm}
 \caption{$main()$}
@@ -504,6 +524,6 @@ For ePA*SE in particular, many possible extensions remain. An anytime algorithm 
 Finally, based on our experiments, we believe the main performance bottleneck remaining in ePA*SE is in restricting access to the main data structures to one thread at a time: although expansions can take place concurrently, idle threads must wait their turn to acquire a safe state to expand. While prior work includes techniques for splitting the frontier for parallel access, none so far have all the theoretical benefits we showed for ePA*SE. It would be an interesting challenge to develop a means for parallel state extraction that respects the ePA*SE expansion rule.
 
 \bibliographystyle{aaai}
-\bibliography{PAPA}
+\bibliography{epase}
 
 \end{document}
