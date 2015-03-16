@@ -58,8 +58,8 @@ Finally, we present an extension to the anytime setting.
 \label{alg:update}
 \begin{algorithmic}
 \STATE $bp(s) := \arg\min_{s'} v(s') + c(s',s)$
-\STATE $g(s) = v(bp(s)) + c(bp(s),s)$
-\STATE $g_p(s) = \min_{s'\in CLOSED} bound(s') + \epsilon c(s',s)$
+\STATE $g(s) := v(bp(s)) + c(bp(s),s)$
+\STATE $g_p(s) := \min_{s'\in CLOSED} bound(s') + \epsilon c(s',s)$
 \IF{$v(s) > g(s)$}
 \IF{$s\in CLOSED$}
 \STATE move $s$ to $FROZEN$
@@ -96,25 +96,20 @@ Finally, we present an extension to the anytime setting.
 \label{alg:search}
 \begin{algorithmic}
 \WHILE{$g(s_{goal}) > bound(s_{goal})$}
-\STATE among $s\in OPEN$ such that $g(s) \le bound(s)$, remove one with the smallest $f(s)$ and LOCK $s$
-\IF{such an $s$ does not exist}
-\STATE wait until $OPEN$ or $BE$ change
-\STATE continue
-\STATE OR just go with the first $s\in OPEN$
-\ENDIF
-\IF{$g(s)\le bound(s)$}
+\STATE remove any $s\in OPEN^+\cup OPEN^-$ and LOCK $s$
+\IF{$safe(s)$}
 \STATE insert $s$ into $CLOSED$
-\ENDIF
 \IF{$v(s)\le bound(s)$}
 \STATE insert $s$ into $FROZEN$
-\ELSE
+\STATE continue
+\ENDIF
+\ENDIF
 \STATE insert $s$ into $BE$ with key $f(s)$
 \STATE $v_{expand} := g(s)$
 \STATE UNLOCK $s$
 \STATE $expand(s)$
 \STATE $v(s) := v_{expand}$
 \STATE remove $s$ from $BE$
-\ENDIF
 \ENDWHILE
 \end{algorithmic}
 \end{algorithm}
@@ -126,15 +121,18 @@ Finally, we present an extension to the anytime setting.
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
 \IF{$s'$ has not been generated yet}
-\STATE $g(s') := v(s') := \infty$
+\STATE $g(s') := v(s') := g_p(s') := \infty$
+\ENDIF
+\IF{$s\in CLOSED$ \AND $g_p(s') > bound(s) + \epsilon c(s,s')$}
+\STATE $g_p(s') = bound(s) + \epsilon c(s,s')$
 \ENDIF
 \IF {$g(s') > g(s) + c(s,s')$}
-\STATE $g(s') = g(s) + c(s,s')$
-\STATE $bp(s') = s$
+\STATE $g(s') := g(s) + c(s,s')$
+\STATE $bp(s') := s$
 \IF{$s' \in CLOSED$}
 \STATE insert $s'$ in $FROZEN$
 \ELSE
-\STATE insert/update $s'$ in $OPEN$ with key $f(s')$
+\STATE insert/update $s'$ in $OPEN^+$/$OPEN^-$ with key $f(s')$
 \ENDIF
 \ENDIF
 \STATE UNLOCK $s'$
@@ -171,15 +169,6 @@ Finally, we present an extension to the anytime setting.
 \RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
 \ENDIF
 
-\STATE \textbf{FUNCTION} $bound(s)$
-\STATE $g_{front} := g_p(s)$
-\STATE $s' :=$ first state in $OPEN^+ \cup BE^+$
-\WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
-\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
-\STATE $s' :=$ state following $s'$ in $OPEN^+ \cup BE^+$
-\ENDWHILE
-\RETURN $\min(g_{front},\;g_{back}(s',s))$
-
 \STATE \textbf{FUNCTION} $v_{back}(s',s)$
 \IF{$s' = NULL$}
 \RETURN $\infty$
@@ -195,6 +184,16 @@ Finally, we present an extension to the anytime setting.
 \STATE $s' :=$ state following $s'$ in $OPEN^-\cup BE^-$
 \ENDWHILE
 \RETURN $\min(v_{front},\;v_{back}(s',s))$
+
+\STATE \textbf{FUNCTION} $bounded(s)$
+\STATE $g_{front} := g_p(s)$
+\STATE $s' :=$ first state in $OPEN^+ \cup BE^+$
+\WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
+\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
+\STATE $s' :=$ state following $s'$ in $OPEN^+ \cup BE^+$
+\ENDWHILE
+\STATE $bound(s) := \max\left(bound(s), \; \min(g_{front},\;g_{back}(s',s))\right)$
+\RETURN $g(s) \le bound(s)$ \AND $g(s) < vbound(s)$
 \end{algorithmic}
 \end{algorithm}
 

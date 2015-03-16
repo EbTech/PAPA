@@ -178,12 +178,12 @@ A state $s\in OPEN$ is safe for expansion if $g(s) \le bound(s)$ using the imple
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
 \IF{$s'$ has not been generated yet}
-\STATE $g(s') := v(s') := g_p(s') = \infty$
+\STATE $g(s') := v(s') := g_p(s') := \infty$
 \ENDIF
 \STATE $g_p(s') := \min(g_p(s'),\,bound(s) + \epsilon c(s,s'))$
 \IF {$g(s') > g(s) + c(s,s')$}
-\STATE $g(s') = g(s) + c(s,s')$
-\STATE $bp(s') = s$
+\STATE $g(s') := g(s) + c(s,s')$
+\STATE $bp(s') := s$
 \IF{$s' \in CLOSED$}
 \STATE insert $s'$ in $FROZEN$
 \ELSE
