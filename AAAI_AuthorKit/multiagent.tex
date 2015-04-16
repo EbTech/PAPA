@@ -1,0 +1,118 @@
+%File: formatting-instruction.tex
+\documentclass[letterpaper]{article}
+% AAAI format packages
+\usepackage{aaai}
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+% Additional packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{comment}
+\newtheorem{defn}{Definition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{thm}{Theorem}
+\newtheorem{cor}{Corollary}
+\newtheorem{rul}{Expansion Rule}
+% END Additional packages
+\frenchspacing
+\setlength{\pdfpagewidth}{8.5in}
+\setlength{\pdfpageheight}{11in}
+\pdfinfo{
+/Title (Multi-Agent A*)
+%/Author (Aram Ebtekar, Mike Phillips, Sven Koenig, Maxim Likhachev)
+/Keywords (weighted A* search, parallel algorithm, heuristic)
+}
+\setcounter{secnumdepth}{0}  
+ \begin{document}
+% The file aaai.sty is the style file for AAAI Press 
+% proceedings, working notes, and technical reports.
+%
+\title{Multi-Agent A*}
+\author{Aram Ebtekar$^\dagger$ \and Mike Phillips$^\dagger$ \and Sven Koenig\thanks{University of Southern California, Los Angeles, CA 90089} \and Maxim Likhachev% <-this % stops a space
+\thanks{Carnegie Mellon University, Pittsburgh, PA 15217}% <-this % stops a space
+%
+}
+\author{AAAI 2015 Submission 2327}% anonymizer
+\maketitle
+\begin{abstract}
+\begin{quote}
+abstract
+\end{quote}
+\end{abstract}
+
+\section{Notes}
+
+For $i=1,\ldots,N$, agent $i$ has a graph defined by vertex set $V_i$ and edge weights $c_i : V_i \times V_i \rightarrow \mathbb R^+$. We consider constraints $\Phi$, each defining a relation on the relative visit times of two sets of nodes $\Phi^-,\Phi^+\subset \cup_i V_i$. There are four constraint types:
+
+\begin{itemize}
+\item $\min \le \min$ (opening a door)
+\item $\max \le \min$ (closing a door)
+\item $\max \le \max$ (restoration)
+\item $\min \le \max$ (sequence)
+\end{itemize}
+
+Given individual plans for each agent, an optimal multi-agent plan can be constructed greedily forward in time, when all constraints are of the opening or closing kind. An optimal multi-agent plan can be constructed greedily backward in time when all constraints are of the closing or restoration kind. Since restoration and sequence constraints can be represented in terms of opens and closes, we consider the former as the only types without loss of generality.
+
+Representing restoration contraints in terms of opens and closes: suppose B restores (i.e. cleans after) A. Then create a copy B' of B. Let B' close A, and B' open any agent's goal node. To deal with the boundary condition where neither A nor B are visited, the start node should have a similar copy, reachable at zero cost.
+
+Representing sequence contraints in terms of opens: suppose (A, B) are a mandated sequence. Then create a copy B' of B. Let A open B', and B' open any agent's goal node.
+
+$g_{s_1,\ldots,s_N}(s_i)$ is the minimum time by which agent $i$ can reach state $s_i$, assuming every agent $j$ will go to $s_j$ along the best known path and wait there forever. Note that the state space for each agent is the Cartesian product of its graph's vertex set, and the set of partial permutations of constraints.
+
+Define $f(s_1,\ldots,s_N) = \max_i g_{s_1,\ldots,s_N}(s_i) + \epsilon h(s_i)$. This key is impractical to compute over all possible tuples. Further approximations will need to be made. Note that $(s_1,\ldots,s_N)$ range over the goal nodes as well as the $OPEN$ list.
+
+Even if we could compute $f$, does it guarantee $N\epsilon$ optimality? To prove that, it would suffice to show that we only expand nodes whose individual-agent $g$-values are $\epsilon$-optimal. However, the logic fails because passing through a door-opening node can result in a sudden drastic decrease in the $g_{s_1,\ldots,s_N}$ value, due to constraints being lifted. To remedy this, we could treat doors as being opened after the partial paths to $(s_1,\ldots,s_N)$, at some lower bound time.
+
+\begin{algorithm}
+\caption{$MultiAgent A^*()$}
+\label{alg:update}
+\begin{algorithmic}
+\STATE $\forall i:\; s_i := start_i$
+\WHILE {$g(goal_1, \ldots, goal_N) > f(s_1,\ldots,s_N)$}
+\STATE $\forall i:\; expand(s_i)$
+\STATE $(s_1,\ldots,s_N) = \arg\min_{s_1,\ldots,s_N} f(s_1,\ldots,s_N)$
+\ENDWHILE
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{$expand(s)$}
+\label{alg:update}
+\begin{algorithmic}
+\FORALL {$s' \in successors(s)$}
+\IF {$g(s') > g(s) + c(s,s')$}
+\STATE $g(s') := g(s) + c(s,s')$
+\STATE $bp(s') := s$
+\ENDIF
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{$successors(u, seq_u)$}
+\label{alg:update}
+\begin{algorithmic}
+\STATE succlist := $\emptyset$
+\FORALL{$v$ such that $c(u,v) < \infty$}
+\STATE $seq_v := seq_u$
+\IF {$v \in \Phi$ as a $\max$ constraint}
+\STATE append $\Phi$ to $seq_v$
+\ENDIF
+\IF {$v \in \Phi$ as a $\min$ constraint \AND $\Phi\notin seq_u$}
+\STATE append $\Phi$ to $seq_v$
+\ENDIF
+\STATE push $(v,seq_v)$ onto succlist
+\ENDFOR
+\RETURN succlist
+\end{algorithmic}
+\end{algorithm}
+
+\bibliographystyle{aaai}
+\bibliography{epase}
+
+\end{document}
