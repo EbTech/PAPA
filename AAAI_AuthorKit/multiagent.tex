@@ -47,6 +47,8 @@ abstract
 
 \section{Notes}
 
+PAD* notes: should we check last element of CLOSED instead of first in OPEN?
+
 For $i=1,\ldots,N$, agent $i$ has a graph defined by vertex set $V_i$ and edge weights $c_i : V_i \times V_i \rightarrow \mathbb R^+$. We consider constraints $\Phi$, each defining a relation on the relative visit times of two sets of nodes $\Phi^-,\Phi^+\subset \cup_i V_i$. There are four constraint types:
 
 \begin{itemize}
@@ -62,14 +64,24 @@ Representing restoration contraints in terms of opens and closes: suppose B rest
 
 Representing sequence contraints in terms of opens: suppose (A, B) are a mandated sequence. Then create a copy B' of B. Let A open B', and B' open any agent's goal node.
 
-$g_{s_1,\ldots,s_N}(s_i)$ is the minimum time by which agent $i$ can reach state $s_i$, assuming every agent $j$ will go to $s_j$ along the best known path and wait there forever. Note that the state space for each agent is the Cartesian product of its graph's vertex set, and the set of partial permutations of constraints.
+NP-completeness proof:
+
+Let's say there are $m$ clauses and the variables are $x_1,x_2,\ldots,x_n$. Draw the edges $(start_1,x_1),\;(start_1,\neg x_1),\;(x_i,x_{i+1}),\;(x_i,\neg x_{i+1}),\;\\(\neg x_i,x_{i+1}),\;(\neg x_i,\neg x_{i+1}),\;(x_n,goal_1),\;(\neg x_n,\neg goal_1)$. For the other agent, draw the edges $(start_2,c_0),\;(c_{i-1},req_{i,j}),\;(req_{i,j},c_i),\;(c_m,goal_2)$. Here, $req_{i,j}$ is a door that needs to be opened by the node corresponding to the $j$'th variable of the $i$'th clause.
+
+$g_{s_1,\ldots,s_N}(s_i)$ is the minimum time by which agent $i$ can reach state $s_i$, assuming every agent $j$ will go to $s_j$ along some known path (following $bp(s_j)$, say) and wait there forever. Note that the state space for each agent is the Cartesian product of its graph's vertex set, and the set of partial permutations of constraints.
 
 Define $f(s_1,\ldots,s_N) = \max_i g_{s_1,\ldots,s_N}(s_i) + \epsilon h(s_i)$. This key is impractical to compute over all possible tuples. Further approximations will need to be made. Note that $(s_1,\ldots,s_N)$ range over the goal nodes as well as the $OPEN$ list.
 
-Even if we could compute $f$, does it guarantee $N\epsilon$ optimality? To prove that, it would suffice to show that we only expand nodes whose individual-agent $g$-values are $\epsilon$-optimal. However, the logic fails because passing through a door-opening node can result in a sudden drastic decrease in the $g_{s_1,\ldots,s_N}$ value, due to constraints being lifted. To remedy this, we could treat doors as being opened after the partial paths to $(s_1,\ldots,s_N)$, at some lower bound time.
+Even if we could compute $f$, does it guarantee $N\epsilon$ optimality? To prove that, it would suffice to show that we only expand nodes whose individual-agent $g$-values are $\epsilon$-optimal. However, the logic fails because passing through a door-opening node can result in a sudden drastic decrease in the $g_{s_1,\ldots,s_N}$ value, due to constraints being lifted. To remedy this, instead of defining $g$ by ``wait-forever" semantics, we could treat doors as being opened after the partial paths to $(s_1,\ldots,s_N)$, at some lower bound time.
+
+A lower-bound for $f(s_1,\ldots,s_n)$ could be computed as $f(s_j)$ by building a coarse search tree at the level of constraint sequences, where a macro-expansion consists of searching toward each possible next constraint node.
+
+Want to prove that $g(s)$ is $\epsilon$-optimal at expansion (when its jointPriority value is minimal), and thus the joint paths are $N\epsilon$ optimal. Suppose $g(s) > \epsilon g^*(s)$. As induction hypothesis, let $s'\in OPEN$ be such that $g(s') \le \epsilon g^*(s')$. Fix a priority-minimizing tuple $(s_1,\ldots,s,\ldots,s_n)$ for $s$. Now consider the tuple $(s_1,\ldots,s',\ldots,s_n)$. If its priority were less, it would follow that $s'$ will be expanded before $s$. But, path to $s$ might open doors much sooner than path to $s'$!
+
+Pending further insights, it seems the state is forced to remember sequences of contrained nodes instead of merely sequences of constraints. This way, we guarantee prefix-suboptimality, and as a bonus get global $\epsilon$-suboptimality without the extra factor of $N$.
 
 \begin{algorithm}
-\caption{$MultiAgent A^*()$}
+\caption{$MultiAgent A^*HighLevel()$}
 \label{alg:update}
 \begin{algorithmic}
 \STATE $\forall i:\; s_i := start_i$
@@ -81,15 +93,40 @@ Even if we could compute $f$, does it guarantee $N\epsilon$ optimality? To prove
 \end{algorithm}
 
 \begin{algorithm}
+\caption{$MultiAgent A^*()$}
+\label{alg:update}
+\begin{algorithmic}
+\STATE $\forall i:\; s_i := start_i$
+\STATE $OPEN := \{start_1,\ldots start_N\}$
+\WHILE {$jointPriority(goal_1, \ldots, goal_N) > OPEN.fmin()$}
+\STATE $expand(OPEN.extractMin())$
+\ENDWHILE
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
 \caption{$expand(s)$}
 \label{alg:update}
 \begin{algorithmic}
 \FORALL {$s' \in successors(s)$}
-\IF {$g(s') > g(s) + c(s,s')$}
-\STATE $g(s') := g(s) + c(s,s')$
+\IF {$g(s') > g(s) + c(s.node,s'.node)$}
+\STATE $g(s') := g(s) + c(s.node,s'.node)$
 \STATE $bp(s') := s$
+\STATE insert $s'$ in $OPEN$
 \ENDIF
 \ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{$f(s)$}
+\label{alg:update}
+\begin{algorithmic}
+\STATE $f := \infty$
+\FORALL {tuples $s_{1\ldots N}\in OPEN$ that include $s$}
+\STATE $f := \min(f, jointPriority(s_{1\ldots N}))$
+\ENDFOR
+\RETURN $f$
 \end{algorithmic}
 \end{algorithm}
 
@@ -100,15 +137,63 @@ Even if we could compute $f$, does it guarantee $N\epsilon$ optimality? To prove
 \STATE succlist := $\emptyset$
 \FORALL{$v$ such that $c(u,v) < \infty$}
 \STATE $seq_v := seq_u$
-\IF {$v \in \Phi$ as a $\max$ constraint}
-\STATE append $\Phi$ to $seq_v$
-\ENDIF
-\IF {$v \in \Phi$ as a $\min$ constraint \AND $\Phi\notin seq_u$}
-\STATE append $\Phi$ to $seq_v$
-\ENDIF
+\FORALL {min constraints $\Phi^\pm \notin seq_u$ with $v\in\Phi^\pm$}
+\STATE append $\Phi^\pm$ to $seq_v$
+\ENDFOR
+\FORALL {max constraints $\Phi^\pm$ with $v\in\Phi^\pm$}
+\STATE remove $\Phi^\pm$ from $seq_v$
+\STATE append $\Phi^\pm$ to $seq_v$
+\ENDFOR
 \STATE push $(v,seq_v)$ onto succlist
 \ENDFOR
 \RETURN succlist
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{$greedyCost(\pi_1,\ldots,\pi_n)$}
+\label{alg:update}
+\begin{algorithmic}
+\STATE $\forall\Phi:\; trigger(\Phi) := \Phi$ is open or $\Phi^-$ is absent in $\pi_{1\ldots N}$
+\STATE $\forall \i\in 1\ldots N:\; u_i := v_i := start_i$
+\STATE $events := \{0: \{1\ldots N\}\}$
+\WHILE {$events$ is not empty}
+\STATE $(time, ids) := extractMin(events)$
+\FORALL {$i\in ids$}
+\STATE $u_i := v_i$
+\FORALL {constraints $\Phi^-$ with $v\in\Phi^-$}
+\IF {$\Phi$ is an open constraint \OR $\Phi^-$ appears in no suffix of $\pi_{1\ldots N}$ after $u_{1\ldots N}$}
+\STATE $trigger(\Phi) := true$
+\ENDIF
+\ENDFOR
+\ENDFOR
+\FORALL {$i\in 1\ldots N$ with $u_i = v_i \neq goal_i$}
+\STATE $v_i :=$ successor of $u_i$ on $\pi_i$
+\FORALL {constraints $\Phi^+$ with $v\in\Phi^+$}
+\IF {$\neg trigger(\Phi)$}
+\STATE $v_i := u_i$ and continue with the next $i$
+\ENDIF
+\ENDFOR
+\STATE $events(time+c(u_i,v_i)).insert(i)$
+\ENDFOR
+\ENDWHILE
+\IF {$u_{1\ldots N} = goal_{1\ldots N}$}
+\RETURN $time$
+\ELSE
+\RETURN $\infty$
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{$jointPriority(s_1,\ldots,s_N)$}
+\label{alg:update}
+\begin{algorithmic}
+\STATE build $\pi_{1\ldots N}$ by following $bp()$ from $s_{1\ldots N}$
+\FORALL {$i\in 1\ldots N$ such that $s_i.node \ne goal_i$}
+\STATE extend $\pi_i$ with a zero cost edge to a node that opens all doors the agent can open, followed by $goal_i$ at cost $\epsilon h(s_i)$
+\ENDFOR
+\RETURN $greedyCost(\pi_1,\ldots,\pi_n)$
 \end{algorithmic}
 \end{algorithm}
 

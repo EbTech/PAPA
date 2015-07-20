@@ -59,7 +59,6 @@ Finally, we present an extension to the anytime setting.
 \begin{algorithmic}
 \STATE $bp(s) := \arg\min_{s'} v(s') + c(s',s)$
 \STATE $g(s) := v(bp(s)) + c(bp(s),s)$
-\STATE $g_p(s) := \min_{s'\in CLOSED} bound(s') + \epsilon c(s',s)$
 \IF{$v(s) > g(s)$}
 \IF{$s\in CLOSED$}
 \STATE move $s$ to $FROZEN$
@@ -78,12 +77,18 @@ Finally, we present an extension to the anytime setting.
 \caption{$main()$}
 \label{alg:main}
 \begin{algorithmic}
-\STATE $OPEN := BE := CLOSED := FROZEN := \emptyset$
+\STATE $OPEN^\pm := BE^\pm := CLOSED := FROZEN := \emptyset$
 \STATE $g(s_{start}) := 0$
+\STATE $bp(s_{start}) = s_{start}$
 \STATE $expand(s_{start})$
 \REPEAT
-\FORALL{changed edges $(u,v)$}
+\FORALL{changed edges $(u,v)$ with $u,v$ already generated}
 \STATE $update(v)$
+\IF{$c(u,v)$ decreased \AND $v\in OPEN^+$}
+\FORALL{$s$ lazily}
+\STATE $l(s) := 0$
+\ENDFOR
+\ENDIF
 \ENDFOR
 \STATE $thaw()$
 \STATE $search()$ on multiple threads in parallel
@@ -95,36 +100,40 @@ Finally, we present an extension to the anytime setting.
 \caption{$search()$}
 \label{alg:search}
 \begin{algorithmic}
-\WHILE{$g(s_{goal}) > bound(s_{goal})$}
+\WHILE{\NOT $safe(s_{goal})$}
 \STATE remove any $s\in OPEN^+\cup OPEN^-$ and LOCK $s$
 \IF{$safe(s)$}
 \STATE insert $s$ into $CLOSED$
-\IF{$v(s)\le bound(s)$}
+\IF{$v(s)\le \epsilon l(s)$}
 \STATE insert $s$ into $FROZEN$
 \STATE continue
 \ENDIF
 \ENDIF
 \STATE insert $s$ into $BE$ with key $f(s)$
-\STATE $v_{expand} := g(s)$
 \STATE UNLOCK $s$
-\STATE $expand(s)$
-\STATE $v(s) := v_{expand}$
+\IF{$v(s) > g(s)$}
+\STATE $expand^+(s)$
+\ELSE
+\STATE $expand^-(s)$
+\ENDIF
 \STATE remove $s$ from $BE$
 \ENDWHILE
 \end{algorithmic}
 \end{algorithm}
 
 \begin{algorithm}
-\caption{$expand(s)$}
-\label{alg:expand}
+\caption{$expand^+(s)$}
+\label{alg:expandplus}
 \begin{algorithmic}
+\STATE $v_{expand} := g(s)$
 \FORALL{$s' \in successors(s)$}
 \STATE LOCK $s'$
 \IF{$s'$ has not been generated yet}
-\STATE $g(s') := v(s') := g_p(s') := \infty$
+\STATE $g(s') := v(s') := l_F(s') := \infty$
+\STATE $l(s') := 0$
 \ENDIF
-\IF{$s\in CLOSED$ \AND $g_p(s') > bound(s) + \epsilon c(s,s')$}
-\STATE $g_p(s') = bound(s) + \epsilon c(s,s')$
+\IF{$s\in CLOSED$ \AND $l_F(s') > l(s) + c(s,s')$}
+\STATE $l_F(s') = l(s) + c(s,s')$
 \ENDIF
 \IF {$g(s') > g(s) + c(s,s')$}
 \STATE $g(s') := g(s) + c(s,s')$
@@ -132,11 +141,28 @@ Finally, we present an extension to the anytime setting.
 \IF{$s' \in CLOSED$}
 \STATE insert $s'$ in $FROZEN$
 \ELSE
-\STATE insert/update $s'$ in $OPEN^+$/$OPEN^-$ with key $f(s')$
+\STATE insert/update $s'$ in $OPEN^\pm$ with key $f(s')$
 \ENDIF
 \ENDIF
 \STATE UNLOCK $s'$
 \ENDFOR
+\STATE $v(s) := v_{expand}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{$expand^-(s)$}
+\label{alg:expandminus}
+\begin{algorithmic}
+\STATE $v(s) := \infty$
+\FORALL{$s' \in successors(s)$}
+\STATE LOCK $s'$
+\IF{$bp(s') = s$}
+\STATE $update(s')$
+\ENDIF
+\STATE UNLOCK $s'$
+\ENDFOR
+\STATE insert $s$ into $OPEN^+$
 \end{algorithmic}
 \end{algorithm}
 
@@ -148,7 +174,9 @@ Finally, we present an extension to the anytime setting.
 \RETURN $\{s' \mid c(s,s')<\infty\}$
 
 \STATE \textbf{FUNCTION} $f(s)$
-\IF{$g(s) < v(s)$}
+\IF{$s = NULL$ (i.e. end of priority queue)}
+\RETURN $\infty$
+\ELSIF{$g(s) < v(s)$}
 \RETURN $g(s) + wh(s,s_{goal})$
 \ELSE
 \RETURN $v(s) + h(s,s_{goal})$
@@ -160,40 +188,37 @@ Finally, we present an extension to the anytime setting.
 \caption{$bound(s)$ enhanced for ePA*SE/PARA*}
 \label{alg:eaux}
 \begin{algorithmic}
-\STATE \textbf{FUNCTION} $g_{back}(s',s)$
-\IF{$s' = NULL$}
-\RETURN $\infty$
-\ELSIF{$w \le \epsilon$}
-\RETURN $g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l$
+\STATE \textbf{FUNCTION} $l_{back}(s',s)$
+\IF{$w \le \epsilon$}
+\RETURN $\frac 1 \epsilon\left(g(s) + f(s') - f(s)\right) + (2-\frac{w+1}\epsilon)c_l$
 \ELSE
-\RETURN $\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l$
+\RETURN $\frac 1 w\left(g(s) + f(s') - f(s)\right) + (1-\frac 1\epsilon)c_l$
 \ENDIF
 
 \STATE \textbf{FUNCTION} $v_{back}(s',s)$
-\IF{$s' = NULL$}
-\RETURN $\infty$
-\ELSE
 \RETURN $v(s) + f(s') - f(s)$
-\ENDIF
 
-\STATE \textbf{FUNCTION} $vbound(s)$
+\STATE \textbf{FUNCTION} $corrupt(s)$
 \STATE $v_{front} := \infty$
 \STATE $s' :=$ first state in $OPEN^-\cup BE^-$
 \WHILE{$v_{back}(s',s) \le g(s) < v_{front}$}
 \STATE $v_{front} := \min(v_{front},\;v(s') + h(s',s))$
 \STATE $s' :=$ state following $s'$ in $OPEN^-\cup BE^-$
 \ENDWHILE
-\RETURN $\min(v_{front},\;v_{back}(s',s))$
+\RETURN $\min(v_{front},\;v_{back}(s',s)) \le g(s)$
 
-\STATE \textbf{FUNCTION} $bounded(s)$
-\STATE $g_{front} := g_p(s)$
+\STATE \textbf{FUNCTION} $safe(s)$
+\IF{$corrupt(s)$}
+\RETURN \FALSE
+\ENDIF
+\STATE $l_{front} := l_F(s)$
 \STATE $s' :=$ first state in $OPEN^+ \cup BE^+$
-\WHILE{$g_{back}(s',s) < g(s) \le g_{front}$}
-\STATE $g_{front} := \min(g_{front},\;g_p(s') + \epsilon h(s',s))$
+\WHILE{$l_{back}(s',s) < g(s)/\epsilon \le l_{front}$}
+\STATE $l_{front} := \min(g_{front},\;l_F(s') + h(s',s))$
 \STATE $s' :=$ state following $s'$ in $OPEN^+ \cup BE^+$
 \ENDWHILE
-\STATE $bound(s) := \max\left(bound(s), \; \min(g_{front},\;g_{back}(s',s))\right)$
-\RETURN $g(s) \le bound(s)$ \AND $g(s) < vbound(s)$
+\STATE $l(s) := \max\left(l(s), \; \min(l_{front},\;l_{back}(s',s))\right)$
+\RETURN $g(s) \le \epsilon l(s)$
 \end{algorithmic}
 \end{algorithm}
 
@@ -202,15 +227,15 @@ Finally, we present an extension to the anytime setting.
 \label{alg:thaw}
 \begin{algorithmic}
 \STATE choose new $\epsilon \in [1,\infty]$ and $w \in [0,\infty]$
-\STATE $OPEN := OPEN \cup FROZEN$ with keys $f(s)$
+\STATE $OPEN^\pm := OPEN^\pm \cup FROZEN$ with keys $f(s)$
 \STATE $CLOSED := FROZEN := \emptyset$
-\FORALL{$s\in OPEN$}
-\STATE $g_p(s) := g(s) + (\epsilon-1)\min(g(s),\;2c_l)$
+\FORALL{$s$ lazily}
+\STATE $l_F(s) := \max(l_F(s),\; \min(g(s),\; \frac 1\epsilon (g(s) + 2(\epsilon-1)c_l))$
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}
 
-The following lemma lists some easily checked invariants of ePA*SE and PARA*.
+The following lemma lists some easily checked invariants of ePA*SE and PARA*. (TODO: check when these actually hold: is it for unlocked states?)
 
 \begin{lemma}
 \label{lem:prop}
@@ -218,9 +243,9 @@ At all times, the following invariants hold:
 \begin{itemize}
 \item $OPEN\cap CLOSED = \emptyset$
 \item $BE\cup FROZEN \subseteq CLOSED$
-\item If $g(s)<\infty$, $bp(\cdot)$ can be followed from $s$ back to $s_{start}$ to yield a path from $s_{start}$ to $s$ costing at most $g(s)$
-\item If $s\ne s_{start}$, then $g(s) + (\epsilon-1)c_l \le g_p(s)$,
-\\$g_p(s) \le min_{s'\in CLOSED}\left\{\epsilon (g^*(s') + c(s',s))\right\}$, and
+\item If not $corrupt(s)$, $bp(\cdot)$ can be followed from $s$ back to $s_{start}$ to yield a path from $s_{start}$ to $s$ costing at most $g(s)$
+\item If $s\ne s_{start}$, then $g(s) + (\epsilon-1)c_l \le \epsilon l_F(s)$,
+\\$l_F(s) \le min_{s'\in FROZEN}\left\{g^*(s') + c(s',s)\right\}$, and
 \\$g(bp(s)) + c(bp(s),s) \le g(s) \le min_{s'}\left\{v(s') + c(s',s)\right\}$
 \item $g(s) < v(s) \Leftrightarrow s\in OPEN^+\cup BE^+\cup FROZEN$
 \item $g(s) > v(s) \Leftrightarrow s\in OPEN^-\cup BE^-$
@@ -247,37 +272,37 @@ We investigate ePA*SE/PARA* beginning at the core: the $bound$ function of Algor
 \begin{lemma}
 \label{lem:indep}
 At all times, for all states $s$ and $s'\notin \{s_{start},s\}$:
-\[g_{back}(s',s) \le g_p(s') + \epsilon h(s',s).\]
+\[l_{back}(s',s) \le l_F(s') + h(s',s).\]
 \end{lemma}
 
 \begin{proof}
-If $w \le \epsilon$, then
+If $w \le \epsilon$, then $\epsilon l_{back}(s',s)$
 \begin{eqnarray*}
-&&g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l
+&=&g(s) + f(s') - f(s) + (2\epsilon-w-1)c_l
 \\&=& g(s') + w(h(s',s_{goal}) - h(s,s_{goal})) + (2\epsilon-w-1)c_l
 \\&\le& g(s') + wh(s',s) + (2\epsilon-w-1)c_l
 \\&\le& g(s') + \epsilon h(s',s) + (w-\epsilon)c_l + (2\epsilon-w-1)c_l
 \\&=& g(s') + (\epsilon-1)c_l + \epsilon h(s',s)
-\\&\le& g_p(s') + \epsilon h(s',s)
+\\&\le& \epsilon(l_F(s') +  h(s',s))
 \end{eqnarray*}
 where the last two inequalities follow by WLOG having $h(s,s') \ge c_l$ and Lemma \ref{lem:prop}.
 
-On the other hand, if $w > \epsilon$, then
+On the other hand, if $w > \epsilon$, then $\epsilon l_{back}(s',s)$
 \begin{eqnarray*}
 &&\frac\epsilon w\left(g(s) + f(s') - f(s)\right) + (\epsilon-1)c_l
 \\&=& \frac\epsilon w\left(g(s') + w(h(s',s_{goal}) - h(s,s_{goal})) \right) + (\epsilon-1)c_l
 \\&\le& g(s') + \epsilon(h(s',s_{goal}) - h(s,s_{goal})) + (\epsilon-1)c_l
 \\&\le& g(s') + (\epsilon-1)c_l + \epsilon h(s',s)
-\\&\le& g_p(s') + \epsilon h(s',s)
+\\&\le& \epsilon(l_F(s') +  h(s',s))
 \end{eqnarray*}
 \end{proof}
 
 \begin{lemma}
 \label{lem:bound}
 For every state $s$,
-\[bound(s) \le \min_{s'\in OPEN \cup BE} \left\{ g_p(s') + \epsilon h(s',s) \right\}.\]
-Furthermore, $g(s) \le bound(s)$ iff
-\[g(s) \le \min_{s'\in OPEN \cup BE} \left\{ g_p(s') + \epsilon h(s',s) \right\}.\]
+\[l(s) \le \min_{s'\in OPEN \cup BE} \left\{ l_F(s') + h(s',s) \right\}.\]
+Furthermore, $g(s) \le l(s)$ iff
+\[g(s) \le \min_{s'\in OPEN \cup BE} \left\{ l_F(s') + h(s',s) \right\}.\]
 \end{lemma}
 
 \begin{proof}
@@ -290,6 +315,8 @@ If the loop terminates because $g(s) \le g_{back}$, then by Lemma \ref{lem:indep
 On the other hand, if the loop terminates because $g(s) > g_{front}$, then the final assignment to $g_{front}$ must correspond to a state $s'$ for which
 \[g(s) > g_p(s') + \epsilon h(s',s) = g_{front} \ge bound(s).\]
 \end{proof}
+
+TODO: state and prove conditions under which states are expanded at most twice. Note that $l_F$ only needs to be updated when a predecessor is put in $FROZEN$, but for convenient we preempt this when a predecessor is $CLOSED$. With the current single-thread expansion and $w\le\epsilon$, it suffices to check $BE$ rather than $OPEN \cup BE$.
 
 \begin{thm}
 \label{thm:subopt}
@@ -361,6 +388,8 @@ To summarize, in finite time we obtain $f(s_{goal}) = g(s_{goal}) \le \epsilon g
 \end{proof}
 
 \subsection{Asymptotic Time Complexity}
+
+TODO: remove blind version, instead argue a bound on the number of PETs in which the loop is entered. With infinite processors, the loop is always entered so the search terminates quickly.
 
 To get a sense for the increased parallelism of ePA*SE, we analyze its worst-case time complexity in the limit where an unbounded supply of processors are available, the goal state is far from the start, and $w \le \epsilon$. To simplify matters, we consider a ``blind" version of ePA*SE which considers only the frontmost state $s\in OPEN$ and in which, if the while loop condition of Algorithm \ref{alg:eaux} succeeds, $s$ is immediately deemed unsafe for expansion. This effectively removes the while loop. 
 
