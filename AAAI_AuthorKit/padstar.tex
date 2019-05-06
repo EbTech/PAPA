@@ -453,12 +453,14 @@ In the first set of experiments, we varied the time per expansion between $10^{-
 
 In the second set of experiments, we varied the time per expansion between $10^{-5}$ and $10^{-4}$ seconds, and the weight parameters $w=\epsilon$ between 1.1, 1,5, 2, 3 and 4. Figure \ref{fig:eps} displays the speedup factor for each setting in a similar format. We observe that ePA*SE achieves very high gains when the weight is low, gradually dissipating as the weight increases. In particular, when the weight is close to 1, the speedup over sequential search is approximately linear in the number of processors. ePA*SE is found to perform at least as well as the tested competitors in all cases, and considerably better in some classes of scenarios.
 
-\begin{figure}[fig:time]
+\begin{figure}
+\label{fig:time}
 \centering\includegraphics[scale=0.55]{time_sweep_para.png}
 \caption{2D grid speedup as the number of threads and expansion time are varied.}
 \end{figure}
 
-\begin{figure}[fig:tps]
+\begin{figure}
+\label{fig:tps}
 \centering\includegraphics[scale=0.55]{eps_sweep_para.png}
 \caption{2D grid speedup as the weight parameter and expansion time are varied.}
 \end{figure}
@@ -468,6 +470,46 @@ In the second set of experiments, we varied the time per expansion between $10^{
 We have presented a framework which unifies wA* and wPA*SE, differentiating them primarily by expansion rule. Within this framework, we created ePA*SE and proved it maintains the completeness and guaranteed bounded suboptimality of wPA*SE, with additional performance bounds in the limit of massive parallelism. We showed experimental gains in performance, presented an anytime variant, and discussed the role of decoupling the weight parameter from the suboptimality factor.
 
 Future work remains to experimentally investigate the effect of using $w \ne \epsilon$ under various settings. The bottleneck of ePA*SE appears to be the fact that only one thread at a time can access the data structures to extract states. While prior work includes techniques for splitting the frontier for parallel access, none so far have all the theoretical benefits we showed for ePA*SE.
+
+\section{Speaking Skills Presentation Notes}
+
+Truncation notes, need to prove correctness: if $s\in OPEN^-$ is not corrupt, then provided $g^\pi(s)+h(s) \le \epsilon_2 (v(s)+h(s))$, it can be $MARKED$. $MARKED$ states belong to $OPEN^+$ even if they're underconsistent, and their key is inflated accordingly. However, $expand^+(s)$ will do nothing if the state doesn't become overconsistent by expansion time.
+
+\begin{algorithm}
+	\caption{$search()$}
+	\begin{algorithmic}
+		\WHILE{\NOT $optimal(s_{goal})$}
+		\STATE remove any $s\in OPEN$
+		\IF{$optimal(s)$}
+		\STATE insert $s$ into $CLOSED$
+		\ENDIF
+		\STATE $expand(s)$
+		\ENDWHILE
+	\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+	\caption{$search()$}
+	\begin{algorithmic}
+		\WHILE{\NOT $optimal(s_{goal})$}
+		\STATE remove any $s\in OPEN^+\cup OPEN^-$
+		\IF{$optimal(s)$}
+		\STATE insert $s$ into $CLOSED$
+		\IF{$v(s)\le \epsilon l(s)$}
+		\STATE insert $s$ into $FROZEN$
+		\STATE continue
+		\ENDIF
+		\ENDIF
+		\STATE insert $s$ into $BE$ with key $f(s)$
+		\IF{$v(s) > g(s)$}
+		\STATE $expand^+(s)$
+		\ELSE
+		\STATE $expand^-(s)$
+		\ENDIF
+		\STATE remove $s$ from $BE$
+		\ENDWHILE
+	\end{algorithmic}
+\end{algorithm}
 
 \bibliographystyle{aaai}
 \bibliography{epase}
